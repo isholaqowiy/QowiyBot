@@ -1,5 +1,6 @@
 import os
 import re
+import asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from googletrans import Translator
@@ -22,21 +23,22 @@ SETTINGS = {
 
 translator = Translator()
 
-# ⚠️ FIX: We separate the Userbot Client and the Admin Bot Client completely
+# Use StringSession for BOTH clients so nothing is written to disk
 user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-bot_client = TelegramClient('bot_control_session', API_ID, API_HASH)
+bot_client = TelegramClient(StringSession(), API_ID, API_HASH)  # Bot uses memory session
 
 print("Starting dual-engine automation pipeline...")
 
 # -------------------------------------------------------------------
-# FEATURE 1: CONTROL INTERFACE (Handled strictly by the Bot account)
+# FEATURE 1: CONTROL INTERFACE (Bot account)
 # -------------------------------------------------------------------
-@bot_client.on(events.NewMessage(pattern=r'^/', incoming=True))
+@bot_client.on(events.NewMessage(pattern=r'^/'))
 async def command_menu(event):
+    # Only respond to the owner
     if event.sender_id != OWNER_ID:
         return
 
-    command = event.text.lower()
+    command = event.text.strip().lower()
 
     if command == "/start":
         await event.respond(
@@ -65,7 +67,7 @@ async def command_menu(event):
         await event.respond(status_text)
 
 # -------------------------------------------------------------------
-# FEATURE 2: SCRAPING ENGINE (Handled strictly by the User session)
+# FEATURE 2: SCRAPING ENGINE (User session)
 # -------------------------------------------------------------------
 @user_client.on(events.NewMessage(chats=SOURCE_CHANNEL))
 async def replication_engine(event):
@@ -89,29 +91,34 @@ async def replication_engine(event):
         final_text = re.sub(r"COMPRAR", "BUY", final_text, flags=re.IGNORECASE)
 
     try:
-        # Userbot sends the payload directly to the destination channel
         await user_client.send_message(
             DESTINATION_CHANNEL,
             final_text,
             file=event.message.media
         )
-        print("Successfully mirrored message event.")
+        print("✅ Successfully mirrored message event.")
     except Exception as delivery_error:
-        print(f"Delivery failed: {delivery_error}")
+        print(f"❌ Delivery failed: {delivery_error}")
 
 # -------------------------------------------------------------------
-# execution engine block
+# MAIN ASYNC ENTRY POINT — THE CRITICAL FIX
 # -------------------------------------------------------------------
-async def start_services():
-    # Start both clients asynchronously
+async def main():
+    # Start user client (already has session string)
     await user_client.start()
+    print("✅ Userbot (scraper) is live.")
+
+    # Start bot client with bot token
     await bot_client.start(bot_token=BOT_TOKEN)
-    print("Both Scraper and Bot control panels are live!")
+    print("✅ Bot control panel is live.")
 
-# Run everything on the event loop
-import asyncio
-loop = asyncio.get_event_loop()
-loop.run_until_complete(start_services())
+    print("🚀 Both engines running. Listening for events...")
 
-# Keep running until both are disconnected
-user_client.run_until_disconnected()
+    # THIS IS THE KEY FIX:
+    # Run BOTH clients concurrently and keep them alive together
+    await asyncio.gather(
+        user_client.run_until_disconnected(),
+        bot_client.run_until_disconnected()
+    )
+
+asyncio.run(main())
