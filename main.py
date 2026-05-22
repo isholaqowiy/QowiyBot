@@ -23,6 +23,7 @@ SETTINGS = {
 
 print("Starting dual-engine automation pipeline...")
 
+# SESSION_STRING is passed directly — no phone prompt needed
 user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
 
@@ -97,7 +98,11 @@ async def replication_engine(event):
 # MAIN
 # -------------------------------------------------------------------
 async def main():
-    await user_client.start()
+    # Connect using session string directly — no phone input needed
+    await user_client.connect()
+    if not await user_client.is_user_authorized():
+        print("❌ ERROR: Session string is invalid or expired!")
+        return
     print("✅ Userbot (scraper) is live.")
 
     await bot_client.start(bot_token=BOT_TOKEN)
