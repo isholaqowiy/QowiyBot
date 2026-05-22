@@ -38,26 +38,26 @@ async def command_menu(event):
 
     if command == "/start":
         await event.respond(
-            "⚙️ Channel Replicator Control Panel\n\n"
+            "⚙️ **Channel Replicator Control Panel**\n\n"
             "Commands:\n"
-            "➡️ /ai on - Enable automatic translation\n"
-            "➡️ /ai off - Disable translation\n"
-            "➡️ /status - Check current bot operations"
+            "➡️ `/ai on` - Enable automatic translation\n"
+            "➡️ `/ai off` - Disable translation\n"
+            "➡️ `/status` - Check current bot operations"
         )
     elif command == "/ai on":
         SETTINGS["ai_translate"] = True
-        await event.respond("✅ AI Translation Enabled.")
+        await event.respond("✅ **AI Translation Enabled.**")
 
     elif command == "/ai off":
         SETTINGS["ai_translate"] = False
-        await event.respond("🛑 AI Translation Disabled.")
+        await event.respond("🛑 **AI Translation Disabled.**")
 
     elif command == "/status":
         await event.respond(
-            "📊 Current System Status:\n"
-            f"• Translation Active: {SETTINGS['ai_translate']}\n"
-            f"• Monitoring Channel ID: {SOURCE_CHANNEL}\n"
-            f"• Broadcasting To ID: {DESTINATION_CHANNEL}"
+            "📊 **Current System Status:**\n"
+            f"• Translation Active: `{SETTINGS['ai_translate']}`\n"
+            f"• Monitoring Channel ID: `{SOURCE_CHANNEL}`\n"
+            f"• Broadcasting To ID: `{DESTINATION_CHANNEL}`"
         )
 
 # -------------------------------------------------------------------
