@@ -3,7 +3,7 @@ import re
 import asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 # --- ENVIRONMENT CONFIGURATION ---
 API_ID = int(os.environ.get("API_ID"))
@@ -21,20 +21,16 @@ SETTINGS = {
     "target_language": "en"
 }
 
-translator = Translator()
-
-# Use StringSession for BOTH clients so nothing is written to disk
-user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
-bot_client = TelegramClient(StringSession(), API_ID, API_HASH)  # Bot uses memory session
-
 print("Starting dual-engine automation pipeline...")
+
+user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
 
 # -------------------------------------------------------------------
 # FEATURE 1: CONTROL INTERFACE (Bot account)
 # -------------------------------------------------------------------
 @bot_client.on(events.NewMessage(pattern=r'^/'))
 async def command_menu(event):
-    # Only respond to the owner
     if event.sender_id != OWNER_ID:
         return
 
@@ -42,29 +38,27 @@ async def command_menu(event):
 
     if command == "/start":
         await event.respond(
-            "⚙️ **Channel Replicator Control Panel**\n\n"
+            "⚙️ Channel Replicator Control Panel\n\n"
             "Commands:\n"
-            "➡️ `/ai on` - Enable automatic translation\n"
-            "➡️ `/ai off` - Disable translation (repost original text)\n"
-            "➡️ `/status` - Check current bot operations"
+            "➡️ /ai on - Enable automatic translation\n"
+            "➡️ /ai off - Disable translation\n"
+            "➡️ /status - Check current bot operations"
         )
-
     elif command == "/ai on":
         SETTINGS["ai_translate"] = True
-        await event.respond("✅ **AI Translation Enabled.** Incoming messages will be translated automatically.")
+        await event.respond("✅ AI Translation Enabled.")
 
     elif command == "/ai off":
         SETTINGS["ai_translate"] = False
-        await event.respond("🛑 **AI Translation Disabled.** Messages will be mirrored in their raw format.")
+        await event.respond("🛑 AI Translation Disabled.")
 
     elif command == "/status":
-        status_text = (
-            "📊 **Current System Status:**\n"
-            f"• Translation Active: `{SETTINGS['ai_translate']}`\n"
-            f"• Monitoring Channel ID: `{SOURCE_CHANNEL}`\n"
-            f"• Broadcasting To ID: `{DESTINATION_CHANNEL}`"
+        await event.respond(
+            "📊 Current System Status:\n"
+            f"• Translation Active: {SETTINGS['ai_translate']}\n"
+            f"• Monitoring Channel ID: {SOURCE_CHANNEL}\n"
+            f"• Broadcasting To ID: {DESTINATION_CHANNEL}"
         )
-        await event.respond(status_text)
 
 # -------------------------------------------------------------------
 # FEATURE 2: SCRAPING ENGINE (User session)
@@ -77,12 +71,11 @@ async def replication_engine(event):
     if raw_text:
         if SETTINGS["ai_translate"]:
             try:
-                detection = translator.detect(raw_text)
-                if detection.lang != SETTINGS["target_language"]:
-                    translation = translator.translate(raw_text, dest=SETTINGS["target_language"])
-                    final_text = translation.text
+                translated = GoogleTranslator(source='auto', target=SETTINGS["target_language"]).translate(raw_text)
+                if translated:
+                    final_text = translated
             except Exception as e:
-                print(f"Translation module error: {e}")
+                print(f"Translation error: {e}")
                 final_text = raw_text
 
         # Text filters
@@ -96,26 +89,22 @@ async def replication_engine(event):
             final_text,
             file=event.message.media
         )
-        print("✅ Successfully mirrored message event.")
+        print("✅ Successfully mirrored message.")
     except Exception as delivery_error:
         print(f"❌ Delivery failed: {delivery_error}")
 
 # -------------------------------------------------------------------
-# MAIN ASYNC ENTRY POINT — THE CRITICAL FIX
+# MAIN
 # -------------------------------------------------------------------
 async def main():
-    # Start user client (already has session string)
     await user_client.start()
     print("✅ Userbot (scraper) is live.")
 
-    # Start bot client with bot token
     await bot_client.start(bot_token=BOT_TOKEN)
     print("✅ Bot control panel is live.")
 
-    print("🚀 Both engines running. Listening for events...")
+    print("🚀 Both engines running!")
 
-    # THIS IS THE KEY FIX:
-    # Run BOTH clients concurrently and keep them alive together
     await asyncio.gather(
         user_client.run_until_disconnected(),
         bot_client.run_until_disconnected()
