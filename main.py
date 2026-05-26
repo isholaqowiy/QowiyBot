@@ -15,6 +15,18 @@ SOURCE_CHANNEL = int(os.environ.get("SOURCE_CHANNEL_ID"))
 DESTINATION_CHANNEL = int(os.environ.get("DESTINATION_CHANNEL_ID"))
 OWNER_ID = int(os.environ.get("OWNER_ID"))
 
+# --- ADMIN/SOURCE NAMES TO REMOVE ---
+# Add any names you want completely removed from messages
+NAMES_TO_REMOVE = [
+    r"Analisis Heury",
+    r"Elián",
+    r"Jafet",
+    r"MyForexSignals",
+    r"SCALPING JZ",
+    r"Señal lista",
+    r"BlockSavvyMxQ",
+]
+
 # --- SYSTEM VARIABLES ---
 SETTINGS = {
     "ai_translate": True,
@@ -23,9 +35,21 @@ SETTINGS = {
 
 print("Starting dual-engine automation pipeline...")
 
-# SESSION_STRING is passed directly — no phone prompt needed
 user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
+
+def clean_message(text):
+    """Remove all admin/source channel names from message"""
+    if not text:
+        return text
+    
+    for name in NAMES_TO_REMOVE:
+        text = re.sub(name, "", text, flags=re.IGNORECASE)
+    
+    # Clean up extra blank lines left after name removal
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    text = text.strip()
+    return text
 
 # -------------------------------------------------------------------
 # FEATURE 1: CONTROL INTERFACE (Bot account)
@@ -70,19 +94,26 @@ async def replication_engine(event):
     final_text = raw_text
 
     if raw_text:
-        if SETTINGS["ai_translate"]:
+        # Step 1: Remove all admin/source names first
+        final_text = clean_message(raw_text)
+
+        # Step 2: Translate if enabled
+        if SETTINGS["ai_translate"] and final_text:
             try:
-                translated = GoogleTranslator(source='auto', target=SETTINGS["target_language"]).translate(raw_text)
+                translated = GoogleTranslator(
+                    source='auto',
+                    target=SETTINGS["target_language"]
+                ).translate(final_text)
                 if translated:
                     final_text = translated
             except Exception as e:
                 print(f"Translation error: {e}")
-                final_text = raw_text
 
-        # Text filters
-        final_text = re.sub(r"Analisis Heury", "MyForexSignals", final_text, flags=re.IGNORECASE)
-        final_text = re.sub(r"VENDER", "SELL", final_text, flags=re.IGNORECASE)
-        final_text = re.sub(r"COMPRAR", "BUY", final_text, flags=re.IGNORECASE)
+        # Step 3: Fix common trading terms after translation
+        final_text = re.sub(r"\bVENDER\b", "SELL", final_text, flags=re.IGNORECASE)
+        final_text = re.sub(r"\bCOMPRAR\b", "BUY", final_text, flags=re.IGNORECASE)
+        final_text = re.sub(r"\bVende\b", "SELL", final_text, flags=re.IGNORECASE)
+        final_text = re.sub(r"\bCompra\b", "BUY", final_text, flags=re.IGNORECASE)
 
     try:
         await user_client.send_message(
@@ -98,7 +129,6 @@ async def replication_engine(event):
 # MAIN
 # -------------------------------------------------------------------
 async def main():
-    # Connect using session string directly — no phone input needed
     await user_client.connect()
     if not await user_client.is_user_authorized():
         print("❌ ERROR: Session string is invalid or expired!")
