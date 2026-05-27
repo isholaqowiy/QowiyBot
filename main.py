@@ -10,26 +10,33 @@ API_ID = int(os.environ.get("API_ID"))
 API_HASH = os.environ.get("API_HASH")
 SESSION_STRING = os.environ.get("SESSION_STRING")
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-
-SOURCE_CHANNEL = int(os.environ.get("SOURCE_CHANNEL_ID"))
-DESTINATION_CHANNEL = int(os.environ.get("DESTINATION_CHANNEL_ID"))
 OWNER_ID = int(os.environ.get("OWNER_ID"))
 
-# --- ADMIN/SOURCE NAMES TO REMOVE ---
-# Add any names you want completely removed from messages
+# --- CHANNEL ROUTING ---
+# Source 1 (Scalping) → Destination 1
+# Source 2 (Daytrading) → Destination 2
+CHANNEL_MAP = {
+    -1003745031724: -1003820544434,   # Scalping
+    -1003189185116: -1003912710963,   # Daytrading
+}
+
+# --- NAMES/WATERMARKS TO REMOVE ---
 NAMES_TO_REMOVE = [
     r"Analisis Heury",
+    r"Elián\s*y\s*Jafet",
     r"Elián",
     r"Jafet",
-    r"MyForexSignals",
+    r"SCALPING JZ\s*🦅?\s*GOLD\s*🏆?",
     r"SCALPING JZ",
     r"Señal lista",
     r"BlockSavvyMxQ",
+    r"MyForexSignals",
+    r"@\w+",  # Remove any @username mentions
 ]
 
 # --- SYSTEM VARIABLES ---
 SETTINGS = {
-    "ai_translate": True,
+    "ai_translate": False,  # OFF by default — only translate when commanded
     "target_language": "en"
 }
 
@@ -38,18 +45,26 @@ print("Starting dual-engine automation pipeline...")
 user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
 
+
 def clean_message(text):
-    """Remove all admin/source channel names from message"""
+    """Remove all source channel names, admin names and watermarks"""
     if not text:
         return text
-    
-    for name in NAMES_TO_REMOVE:
-        text = re.sub(name, "", text, flags=re.IGNORECASE)
-    
-    # Clean up extra blank lines left after name removal
+
+    for pattern in NAMES_TO_REMOVE:
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+
+    # Fix trading terms
+    text = re.sub(r"\bVENDER\b", "SELL", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bCOMPRAR\b", "BUY", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bVende\b", "SELL", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bCompra\b", "BUY", text, flags=re.IGNORECASE)
+
+    # Clean up extra blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
     return text
+
 
 # -------------------------------------------------------------------
 # FEATURE 1: CONTROL INTERFACE (Bot account)
@@ -66,38 +81,53 @@ async def command_menu(event):
             "⚙️ **Channel Replicator Control Panel**\n\n"
             "Commands:\n"
             "➡️ `/ai on` - Enable automatic translation\n"
-            "➡️ `/ai off` - Disable translation\n"
-            "➡️ `/status` - Check current bot operations"
+            "➡️ `/ai off` - Disable translation (default)\n"
+            "➡️ `/status` - Check current bot status\n\n"
+            "📡 **Monitoring:**\n"
+            "• Scalping channel → Your scalping channel\n"
+            "• Daytrading channel → Your daytrading channel"
         )
+
     elif command == "/ai on":
         SETTINGS["ai_translate"] = True
-        await event.respond("✅ **AI Translation Enabled.**")
+        await event.respond("✅ **AI Translation Enabled.** Messages will be translated to English.")
 
     elif command == "/ai off":
         SETTINGS["ai_translate"] = False
-        await event.respond("🛑 **AI Translation Disabled.**")
+        await event.respond("🛑 **AI Translation Disabled.** Messages will keep their original language.")
 
     elif command == "/status":
         await event.respond(
             "📊 **Current System Status:**\n"
             f"• Translation Active: `{SETTINGS['ai_translate']}`\n"
-            f"• Monitoring Channel ID: `{SOURCE_CHANNEL}`\n"
-            f"• Broadcasting To ID: `{DESTINATION_CHANNEL}`"
+            f"• Scalping Source: `-1003745031724`\n"
+            f"• Scalping Destination: `-1003820544434`\n"
+            f"• Daytrading Source: `-1003189185116`\n"
+            f"• Daytrading Destination: `-1003912710963`"
         )
+
 
 # -------------------------------------------------------------------
 # FEATURE 2: SCRAPING ENGINE (User session)
 # -------------------------------------------------------------------
-@user_client.on(events.NewMessage(chats=SOURCE_CHANNEL))
+@user_client.on(events.NewMessage(chats=list(CHANNEL_MAP.keys())))
 async def replication_engine(event):
+    # Get the correct destination for this source
+    source_id = event.chat_id
+    destination_id = CHANNEL_MAP.get(source_id)
+
+    if not destination_id:
+        print(f"⚠️ No destination mapped for source: {source_id}")
+        return
+
     raw_text = event.message.message
     final_text = raw_text
 
     if raw_text:
-        # Step 1: Remove all admin/source names first
+        # Step 1: Clean names and watermarks
         final_text = clean_message(raw_text)
 
-        # Step 2: Translate if enabled
+        # Step 2: Translate only if enabled by command
         if SETTINGS["ai_translate"] and final_text:
             try:
                 translated = GoogleTranslator(
@@ -109,21 +139,16 @@ async def replication_engine(event):
             except Exception as e:
                 print(f"Translation error: {e}")
 
-        # Step 3: Fix common trading terms after translation
-        final_text = re.sub(r"\bVENDER\b", "SELL", final_text, flags=re.IGNORECASE)
-        final_text = re.sub(r"\bCOMPRAR\b", "BUY", final_text, flags=re.IGNORECASE)
-        final_text = re.sub(r"\bVende\b", "SELL", final_text, flags=re.IGNORECASE)
-        final_text = re.sub(r"\bCompra\b", "BUY", final_text, flags=re.IGNORECASE)
-
     try:
         await user_client.send_message(
-            DESTINATION_CHANNEL,
+            destination_id,
             final_text,
             file=event.message.media
         )
-        print("✅ Successfully mirrored message.")
+        print(f"✅ Mirrored message from {source_id} → {destination_id}")
     except Exception as delivery_error:
         print(f"❌ Delivery failed: {delivery_error}")
+
 
 # -------------------------------------------------------------------
 # MAIN
@@ -138,7 +163,7 @@ async def main():
     await bot_client.start(bot_token=BOT_TOKEN)
     print("✅ Bot control panel is live.")
 
-    print("🚀 Both engines running!")
+    print("🚀 Both engines running — monitoring 2 source channels!")
 
     await asyncio.gather(
         user_client.run_until_disconnected(),
