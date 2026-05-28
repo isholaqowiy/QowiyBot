@@ -3,6 +3,7 @@ import re
 import asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
+from telethon.tl.types import MessageMediaDocument
 from deep_translator import GoogleTranslator
 
 # --- ENVIRONMENT CONFIGURATION ---
@@ -39,7 +40,6 @@ NAMES_TO_REMOVE = [
 ]
 
 # --- WORD REPLACEMENTS ---
-# "LOS VISIONARIOS" replaced with Omar's brand name
 WORD_REPLACEMENTS = {
     r"LOS VISIONARIOS": "MY TRADING SIGNALS",
     r"Los Visionarios": "My Trading Signals",
@@ -53,6 +53,13 @@ WORD_REPLACEMENTS = {
     r"Compra\b": "BUY",
 }
 
+# --- MESSAGES TO BLOCK ---
+BLOCKED_PHRASES = [
+    r"los visionarios",
+    r"visionarios",
+    r"rendimiento diario",
+]
+
 # --- SYSTEM VARIABLES ---
 SETTINGS = {
     "ai_translate": False,
@@ -65,20 +72,40 @@ user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
 
 
+def is_audio_message(message):
+    """Detect voice notes and audio files"""
+    if not message.media:
+        return False
+    # Check for voice notes
+    if hasattr(message.media, 'document'):
+        doc = message.media.document
+        if hasattr(doc, 'attributes'):
+            for attr in doc.attributes:
+                attr_type = type(attr).__name__
+                if attr_type in ['DocumentAttributeAudio', 'DocumentAttributeVoice']:
+                    return True
+    return False
+
+
+def is_blocked_message(text):
+    """Block messages mentioning Visionarios"""
+    if not text:
+        return False
+    for phrase in BLOCKED_PHRASES:
+        if re.search(phrase, text, re.IGNORECASE):
+            print(f"🚫 Blocked: matched '{phrase}'")
+            return True
+    return False
+
+
 def clean_message(text):
     """Remove source names and replace watermarks"""
     if not text:
         return text
-
-    # Remove source channel names
     for pattern in NAMES_TO_REMOVE:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-
-    # Apply word replacements
     for pattern, replacement in WORD_REPLACEMENTS.items():
         text = re.sub(pattern, replacement, text)
-
-    # Clean up extra blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
     return text
@@ -116,7 +143,12 @@ async def command_menu(event):
             f"• Translation Active: `{SETTINGS['ai_translate']}`\n\n"
             "📡 **Channel Routing:**\n"
             "• Golden\"HardScalping\"Room → SCALPING JZ GOLD\n"
-            "• Golden\"Daytrading\"Room → DAYTRADING JZ GOLD"
+            "• Golden\"Daytrading\"Room → DAYTRADING JZ GOLD\n\n"
+            "⚙️ **Rules:**\n"
+            "• Texts: ✅ Copied\n"
+            "• Images: ✅ Copied\n"
+            "• Audios: ❌ Blocked\n"
+            "• Source names: ❌ Removed"
         )
 
 
@@ -134,18 +166,26 @@ async def replication_engine(event):
     raw_text = event.message.message
     has_media = event.message.media is not None
 
-    # Skip completely empty messages with no media
+    # Rule 1: Skip audio/voice messages completely
+    if is_audio_message(event.message):
+        print("⏭️ Skipped: audio/voice message")
+        return
+
+    # Rule 2: Skip empty messages
     if not raw_text and not has_media:
+        print("⏭️ Skipped: empty message")
+        return
+
+    # Rule 3: Block Visionarios messages
+    if raw_text and is_blocked_message(raw_text):
         return
 
     # Process message text
     final_text = raw_text
 
     if raw_text:
-        # Clean names and replace watermarks
         final_text = clean_message(raw_text)
 
-        # Translate only if enabled
         if SETTINGS["ai_translate"] and final_text:
             try:
                 translated = GoogleTranslator(
