@@ -13,11 +13,9 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 OWNER_ID = int(os.environ.get("OWNER_ID"))
 
 # --- CHANNEL ROUTING ---
-# Golden"HardScalping"Room → SCALPING JZ GOLD
-# Golden"Daytrading"Room   → DAYTRADING JZ GOLD
 CHANNEL_MAP = {
-    -1003745031724: -1003820544434,
-    -1003189185116: -1003912710963,
+    -1003745031724: -1003820544434,   # Golden"HardScalping"Room → SCALPING JZ GOLD
+    -1003189185116: -1003912710963,   # Golden"Daytrading"Room → DAYTRADING JZ GOLD
 }
 
 # --- NAMES/WATERMARKS TO REMOVE ---
@@ -36,71 +34,24 @@ NAMES_TO_REMOVE = [
     r"Señal lista\s*",
     r"BlockSavvyMxQ\s*",
     r"MyForexSignals\s*",
-    r"Los Visionarios\s*",
-    r"Visionarios\s*",
     r"HARDSCALPING\s*",
-    r"Rendimiento Diario\s*",
     r"@\w+",
 ]
 
-# --- MESSAGES TO BLOCK COMPLETELY ---
-BLOCKED_PHRASES = [
-    r"vende oro ahora",
-    r"compra oro ahora",
-    r"vamos con el reporte",
-    r"reporte del día",
-    r"reporte del dia",
-    r"rendimiento diario",
-    r"los visionarios",
-    r"visionarios",
-    r"no te quedes fuera",
-    r"presume ese profit",
-    r"show off that profit",
-    r"envía tu reporte",
-    r"submit your report",
-    r"chatderesultados",
-    r"chat de resultados",
-    r"días de inactividad",
-    r"days of inactivity",
-    r"te elimina",
-    r"does not eliminate",
-    r"recuerden que",
-    r"remember that",
-    r"para los nuevo",
-    r"mensaje fijado",
-    r"sigue así",
-    r"keep like this",
-    r"corrida de oro",
-    r"gold run",
-    r"faster broker",
-    r"broker withdrawal",
-    r"sesión sólida",
-    r"solid session",
-    r"familia",
-    r"seguimos",
-    r"beneficio neto",
-    r"tasa de ganancia",
-    r"ganadas",
-    r"perdidas",
-    r"let's go with the report",
-    r"don't be left out",
-    r"day family",
-    r"señal lista",
-    r"\+\d+\s*pips",
-]
-
-# --- VALID TRADING SIGNAL KEYWORDS ---
-SIGNAL_KEYWORDS = [
-    "VENDER", "COMPRAR", "SELL", "BUY",
-    "TP1", "TP2", "TP3", "SL",
-    "ENTRAR", "ENTRY",
-    "XAUUSD", "EURUSD", "GBPUSD", "USDJPY",
-    "RAZÓN PARA", "RAZON PARA",
-    "PATRÓN", "PATRON",
-    "BASE DE", "ENGULFING",
-    "TP1 ASEGURA", "TP1 SECURES",
-    "PAGANDO",
-]
+# --- WORD REPLACEMENTS ---
+# "LOS VISIONARIOS" replaced with Omar's brand name
+WORD_REPLACEMENTS = {
+    r"LOS VISIONARIOS": "MY TRADING SIGNALS",
+    r"Los Visionarios": "My Trading Signals",
+    r"VISIONARIOS": "TRADING SIGNALS",
+    r"Visionarios": "Trading Signals",
+    r"Rendimiento Diario": "Daily Performance",
+    r"RENDIMIENTO DIARIO": "DAILY PERFORMANCE",
+    r"VENDER": "SELL",
+    r"COMPRAR": "BUY",
+    r"Vende\b": "SELL",
+    r"Compra\b": "BUY",
+}
 
 # --- SYSTEM VARIABLES ---
 SETTINGS = {
@@ -114,36 +65,20 @@ user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
 bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
 
 
-def is_blocked_message(text):
-    if not text:
-        return False
-    text_lower = text.lower()
-    for phrase in BLOCKED_PHRASES:
-        if re.search(phrase, text_lower, re.IGNORECASE):
-            print(f"🚫 Blocked: matched '{phrase}'")
-            return True
-    return False
-
-
-def is_valid_signal(text):
-    if not text:
-        return False
-    text_upper = text.upper()
-    for keyword in SIGNAL_KEYWORDS:
-        if keyword in text_upper:
-            return True
-    return False
-
-
 def clean_message(text):
+    """Remove source names and replace watermarks"""
     if not text:
         return text
+
+    # Remove source channel names
     for pattern in NAMES_TO_REMOVE:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bVENDER\b", "SELL", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bCOMPRAR\b", "BUY", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bVende\b", "SELL", text, flags=re.IGNORECASE)
-    text = re.sub(r"\bCompra\b", "BUY", text, flags=re.IGNORECASE)
+
+    # Apply word replacements
+    for pattern, replacement in WORD_REPLACEMENTS.items():
+        text = re.sub(pattern, replacement, text)
+
+    # Clean up extra blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
     return text
@@ -199,28 +134,18 @@ async def replication_engine(event):
     raw_text = event.message.message
     has_media = event.message.media is not None
 
-    # Block forbidden messages
-    if raw_text and is_blocked_message(raw_text):
+    # Skip completely empty messages with no media
+    if not raw_text and not has_media:
         return
 
-    # Text only — must be valid signal
-    if not has_media:
-        if not raw_text or not is_valid_signal(raw_text):
-            print("⏭️ Skipped: not a valid trading signal")
-            return
-
-    # Media — must have valid signal text
-    if has_media:
-        if not raw_text or not is_valid_signal(raw_text):
-            print("⏭️ Skipped: media without valid signal text")
-            return
-
-    # Process message
+    # Process message text
     final_text = raw_text
 
     if raw_text:
+        # Clean names and replace watermarks
         final_text = clean_message(raw_text)
 
+        # Translate only if enabled
         if SETTINGS["ai_translate"] and final_text:
             try:
                 translated = GoogleTranslator(
@@ -232,6 +157,7 @@ async def replication_engine(event):
             except Exception as e:
                 print(f"Translation error: {e}")
 
+    # Send to destination
     try:
         await user_client.send_message(
             destination_id,
