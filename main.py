@@ -3,7 +3,6 @@ import re
 import asyncio
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
-from telethon.tl.types import MessageMediaDocument
 from deep_translator import GoogleTranslator
 
 # --- ENVIRONMENT CONFIGURATION ---
@@ -15,8 +14,8 @@ OWNER_ID = int(os.environ.get("OWNER_ID"))
 
 # --- CHANNEL ROUTING ---
 CHANNEL_MAP = {
-    -1003745031724: -1003820544434,   # Golden"HardScalping"Room → SCALPING JZ GOLD
-    -1003189185116: -1003912710963,   # Golden"Daytrading"Room → DAYTRADING JZ GOLD
+    -1003745031724: -1003820544434,
+    -1003189185116: -1003912710963,
 }
 
 # --- NAMES/WATERMARKS TO REMOVE ---
@@ -66,6 +65,11 @@ SETTINGS = {
     "target_language": "en"
 }
 
+# --- ALBUM/GROUP TRACKING ---
+# Stores grouped media albums temporarily
+album_buffer = {}
+album_timers = {}
+
 print("Starting dual-engine automation pipeline...")
 
 user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
@@ -76,7 +80,6 @@ def is_audio_message(message):
     """Detect voice notes and audio files"""
     if not message.media:
         return False
-    # Check for voice notes
     if hasattr(message.media, 'document'):
         doc = message.media.document
         if hasattr(doc, 'attributes'):
@@ -109,6 +112,42 @@ def clean_message(text):
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
     return text
+
+
+async def send_album(destination_id, messages):
+    """Send a group of messages as an album"""
+    try:
+        # Collect all media files
+        media_files = []
+        caption = None
+
+        for msg in messages:
+            if msg.media:
+                media_files.append(msg.media)
+            if msg.message and not caption:
+                caption = clean_message(msg.message)
+
+        if media_files:
+            await user_client.send_file(
+                destination_id,
+                media_files,
+                caption=caption
+            )
+            print(f"✅ Sent album of {len(media_files)} files → {destination_id}")
+    except Exception as e:
+        print(f"❌ Album send failed: {e}")
+        # Fallback: send individually
+        for msg in messages:
+            try:
+                raw_text = msg.message
+                final_text = clean_message(raw_text) if raw_text else None
+                await user_client.send_message(
+                    destination_id,
+                    final_text,
+                    file=msg.media
+                )
+            except Exception as e2:
+                print(f"❌ Individual send failed: {e2}")
 
 
 # -------------------------------------------------------------------
@@ -146,7 +185,7 @@ async def command_menu(event):
             "• Golden\"Daytrading\"Room → DAYTRADING JZ GOLD\n\n"
             "⚙️ **Rules:**\n"
             "• Texts: ✅ Copied\n"
-            "• Images: ✅ Copied\n"
+            "• Images: ✅ Copied grouped\n"
             "• Audios: ❌ Blocked\n"
             "• Source names: ❌ Removed"
         )
@@ -155,18 +194,48 @@ async def command_menu(event):
 # -------------------------------------------------------------------
 # FEATURE 2: SCRAPING ENGINE
 # -------------------------------------------------------------------
-@user_client.on(events.NewMessage(chats=list(CHANNEL_MAP.keys())))
-async def replication_engine(event):
+@user_client.on(events.Album(chats=list(CHANNEL_MAP.keys())))
+async def album_handler(event):
+    """Handle grouped media albums"""
     source_id = event.chat_id
     destination_id = CHANNEL_MAP.get(source_id)
 
     if not destination_id:
         return
 
+    # Check if any message in album is audio
+    for msg in event.messages:
+        if is_audio_message(msg):
+            print("⏭️ Skipped album: contains audio")
+            return
+
+    # Check blocked phrases in any message text
+    for msg in event.messages:
+        if msg.message and is_blocked_message(msg.message):
+            print("⏭️ Skipped album: blocked content")
+            return
+
+    # Send as grouped album
+    await send_album(destination_id, event.messages)
+
+
+@user_client.on(events.NewMessage(chats=list(CHANNEL_MAP.keys())))
+async def replication_engine(event):
+    """Handle individual messages"""
+    source_id = event.chat_id
+    destination_id = CHANNEL_MAP.get(source_id)
+
+    if not destination_id:
+        return
+
+    # Skip if part of an album (handled by album_handler)
+    if event.message.grouped_id:
+        return
+
     raw_text = event.message.message
     has_media = event.message.media is not None
 
-    # Rule 1: Skip audio/voice messages completely
+    # Rule 1: Skip audio messages
     if is_audio_message(event.message):
         print("⏭️ Skipped: audio/voice message")
         return
@@ -180,9 +249,8 @@ async def replication_engine(event):
     if raw_text and is_blocked_message(raw_text):
         return
 
-    # Process message text
+    # Process message
     final_text = raw_text
-
     if raw_text:
         final_text = clean_message(raw_text)
 
