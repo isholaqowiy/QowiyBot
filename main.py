@@ -8,7 +8,6 @@ from telethon.tl.types import (
     MessageMediaDocument,
     DocumentAttributeVideo,
     DocumentAttributeAudio,
-    DocumentAttributeVoice,
 )
 from deep_translator import GoogleTranslator
 
@@ -58,7 +57,7 @@ WORD_REPLACEMENTS = {
     r"Compra\b": "BUY",
 }
 
-# --- IMAGES TO BLOCK (text found in caption) ---
+# --- IMAGES TO BLOCK ---
 BLOCKED_IMAGE_PHRASES = [
     r"visionarios",
     r"rendimiento diario",
@@ -134,33 +133,48 @@ def is_authorized(sender_id):
 
 
 def is_audio_message(message):
-    """Block voice notes and audio files"""
+    """Detect voice notes and audio files"""
     if not message.media:
         return False
     if isinstance(message.media, MessageMediaDocument):
         doc = message.media.document
         if hasattr(doc, 'attributes'):
             for attr in doc.attributes:
-                if isinstance(attr, (DocumentAttributeAudio, DocumentAttributeVoice)):
+                # Check by class name to avoid import issues
+                attr_name = type(attr).__name__
+                if attr_name in [
+                    'DocumentAttributeAudio',
+                    'DocumentAttributeVoice'
+                ]:
                     return True
+                # Also check if it's audio via mime type
+                if hasattr(message.media.document, 'mime_type'):
+                    mime = message.media.document.mime_type
+                    if mime and mime.startswith('audio/'):
+                        return True
     return False
 
 
 def is_video_message(message):
-    """Block videos"""
+    """Detect video files"""
     if not message.media:
         return False
     if isinstance(message.media, MessageMediaDocument):
         doc = message.media.document
+        # Check mime type for video
+        if hasattr(doc, 'mime_type') and doc.mime_type:
+            if doc.mime_type.startswith('video/'):
+                return True
+        # Check attributes
         if hasattr(doc, 'attributes'):
             for attr in doc.attributes:
-                if isinstance(attr, DocumentAttributeVideo):
+                attr_name = type(attr).__name__
+                if attr_name == 'DocumentAttributeVideo':
                     return True
     return False
 
 
 def is_photo_message(message):
-    """Check if message is a photo"""
     return isinstance(message.media, MessageMediaPhoto)
 
 
@@ -174,7 +188,6 @@ def has_links(text):
 
 
 def is_blocked_image(text):
-    """Block images with certain captions"""
     if not text:
         return False
     for phrase in BLOCKED_IMAGE_PHRASES:
@@ -205,28 +218,16 @@ def is_blocked_word_found(text):
 def clean_message(text):
     if not text:
         return text
-
-    # Replace person names
     for pattern, replacement in NAMES_TO_REPLACE:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-
-    # Remove channel/brand names
     for pattern in NAMES_TO_REMOVE:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-
-    # Remove @usernames and links
     text = re.sub(r'@\w+', '', text)
     text = re.sub(r'https?://\S+|t\.me/\S+|www\.\S+', '', text)
-
-    # Apply default replacements
     for pattern, replacement in WORD_REPLACEMENTS.items():
         text = re.sub(pattern, replacement, text)
-
-    # Apply custom replacements
     for old, new in SETTINGS["custom_replacements"].items():
         text = re.sub(re.escape(old), new, text, flags=re.IGNORECASE)
-
-    # Clean up
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
     return text
@@ -425,28 +426,24 @@ async def album_handler(event):
     if not destination_id:
         return
 
-    # Skip if any audio or video in album
     for msg in event.messages:
         if is_audio_message(msg) or is_video_message(msg):
             print("⏭️ Skipped album: audio/video")
             return
 
-    # Get caption
     caption = None
     for msg in event.messages:
         if msg.message:
-            # Block VISIONARIOS images
             if is_blocked_image(msg.message):
-                print("⏭️ Skipped album: blocked image content")
+                print("⏭️ Skipped album: blocked content")
                 return
             caption = clean_message(msg.message)
             break
 
-    # Only copy photos — no videos
-    media_files = []
-    for msg in event.messages:
-        if is_photo_message(msg):
-            media_files.append(msg.media)
+    media_files = [
+        msg.media for msg in event.messages
+        if is_photo_message(msg)
+    ]
 
     if media_files:
         try:
@@ -473,16 +470,13 @@ async def replication_engine(event):
     if not destination_id:
         return
 
-    # Skip album messages
     if event.message.grouped_id:
         return
 
-    # Skip audio
     if is_audio_message(event.message):
         print("⏭️ Skipped: audio")
         return
 
-    # Skip video
     if is_video_message(event.message):
         print("⏭️ Skipped: video")
         return
@@ -491,22 +485,17 @@ async def replication_engine(event):
     has_media = event.message.media is not None
     is_photo = is_photo_message(event.message)
 
-    # Skip empty
     if not raw_text and not has_media:
         return
 
-    # For photos — check caption
     if is_photo:
         if raw_text and is_blocked_image(raw_text):
             print("⏭️ Skipped: blocked image")
             return
-        # Only copy photos that have valid signal text
-        # or no caption at all (pure chart)
         if raw_text and not is_allowed_message(raw_text):
             print("⏭️ Skipped: photo with non-signal caption")
             return
 
-    # For text only messages
     if not has_media:
         if not raw_text:
             return
@@ -520,7 +509,6 @@ async def replication_engine(event):
             print("⏭️ Skipped: blocked word")
             return
 
-    # Process text
     final_text = None
     if raw_text:
         final_text = clean_message(raw_text)
@@ -535,7 +523,6 @@ async def replication_engine(event):
             except Exception as e:
                 print(f"Translation error: {e}")
 
-    # Send
     try:
         await user_client.send_message(
             destination_id,
