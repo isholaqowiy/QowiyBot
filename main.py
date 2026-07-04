@@ -6,8 +6,6 @@ from telethon.sessions import StringSession
 from telethon.tl.types import (
     MessageMediaPhoto,
     MessageMediaDocument,
-    DocumentAttributeVideo,
-    DocumentAttributeAudio,
 )
 from deep_translator import GoogleTranslator
 
@@ -62,16 +60,18 @@ BLOCKED_IMAGE_PHRASES = [
     r"visionarios",
     r"rendimiento diario",
     r"rendimiento del canal",
-    r"beneficio neto del día",
+    r"beneficio neto",
     r"tasa de ganancia",
     r"los visionarios",
     r"reporte",
     r"resultado",
     r"canal vip",
     r"señales de day trading",
+    r"participantes",
+    r"screen",
 ]
 
-# --- VALID TEXT MESSAGES TO COPY ---
+# --- VALID TEXT AND IMAGE CAPTIONS TO COPY ---
 ALLOWED_PATTERNS = [
     r"señal lista",
     r"pendientes",
@@ -133,43 +133,34 @@ def is_authorized(sender_id):
 
 
 def is_audio_message(message):
-    """Detect voice notes and audio files"""
     if not message.media:
         return False
     if isinstance(message.media, MessageMediaDocument):
         doc = message.media.document
+        if hasattr(doc, 'mime_type') and doc.mime_type:
+            if doc.mime_type.startswith('audio/'):
+                return True
         if hasattr(doc, 'attributes'):
             for attr in doc.attributes:
-                # Check by class name to avoid import issues
-                attr_name = type(attr).__name__
-                if attr_name in [
+                if type(attr).__name__ in [
                     'DocumentAttributeAudio',
                     'DocumentAttributeVoice'
                 ]:
                     return True
-                # Also check if it's audio via mime type
-                if hasattr(message.media.document, 'mime_type'):
-                    mime = message.media.document.mime_type
-                    if mime and mime.startswith('audio/'):
-                        return True
     return False
 
 
 def is_video_message(message):
-    """Detect video files"""
     if not message.media:
         return False
     if isinstance(message.media, MessageMediaDocument):
         doc = message.media.document
-        # Check mime type for video
         if hasattr(doc, 'mime_type') and doc.mime_type:
             if doc.mime_type.startswith('video/'):
                 return True
-        # Check attributes
         if hasattr(doc, 'attributes'):
             for attr in doc.attributes:
-                attr_name = type(attr).__name__
-                if attr_name == 'DocumentAttributeVideo':
+                if type(attr).__name__ == 'DocumentAttributeVideo':
                     return True
     return False
 
@@ -199,9 +190,8 @@ def is_blocked_image(text):
 def is_allowed_message(text):
     if not text:
         return False
-    text_lower = text.lower()
     for pattern in ALLOWED_PATTERNS:
-        if re.search(pattern, text_lower):
+        if re.search(pattern, text, re.IGNORECASE):
             return True
     return False
 
@@ -265,14 +255,14 @@ async def command_menu(event):
             "**🌐 Translation:**\n"
             "➡️ `/ai on` - Enable translation\n"
             "➡️ `/ai off` - Disable translation\n"
-            "➡️ `/language en` - Translate to English\n"
-            "➡️ `/language es` - Translate to Spanish\n"
-            "➡️ `/language fr` - Translate to French\n\n"
+            "➡️ `/language en` - Set to English\n"
+            "➡️ `/language es` - Set to Spanish\n"
+            "➡️ `/language fr` - Set to French\n\n"
             "**✏️ Word Management:**\n"
             "➡️ `/addword old:new` - Replace a word\n"
             "➡️ `/removeword word` - Remove replacement\n"
-            "➡️ `/wordlist` - Show custom replacements\n"
-            "➡️ `/blockword word` - Block messages with word\n"
+            "➡️ `/wordlist` - Show replacements\n"
+            "➡️ `/blockword word` - Block a word\n"
             "➡️ `/unblockword word` - Unblock a word\n"
             "➡️ `/blocklist` - Show blocked words\n\n"
             "**📡 Channels:**\n"
@@ -298,7 +288,7 @@ async def command_menu(event):
         SETTINGS["paused"] = True
         await event.respond(
             "⏸ **Bot Paused.**\n"
-            "No messages will be copied until you send /resume"
+            "No messages will be copied until /resume"
         )
 
     elif command == "/resume":
@@ -317,24 +307,17 @@ async def command_menu(event):
 
     elif command == "/ai off":
         SETTINGS["ai_translate"] = False
-        await event.respond(
-            "🛑 **Translation Disabled.**\n"
-            "Messages keep original language."
-        )
+        await event.respond("🛑 **Translation Disabled.**")
 
     elif command.startswith("/language "):
         lang = command.split("/language ")[1].strip()
         supported = ["en", "es", "fr", "de", "pt", "ar", "zh", "ru", "it"]
         if lang in supported:
             SETTINGS["target_language"] = lang
-            await event.respond(
-                f"🌐 **Language set to `{lang.upper()}`**\n"
-                f"Enable with /ai on"
-            )
+            await event.respond(f"🌐 **Language set to `{lang.upper()}`**")
         else:
             await event.respond(
-                f"❌ Unsupported language: `{lang}`\n"
-                f"Supported: `{', '.join(supported)}`"
+                f"❌ Unsupported. Supported: `{', '.join(supported)}`"
             )
 
     elif full_text.lower().startswith("/addword "):
@@ -345,14 +328,12 @@ async def command_menu(event):
                 new_word = parts[1].strip()
                 SETTINGS["custom_replacements"][old_word] = new_word
                 await event.respond(
-                    f"✅ **Replacement added:**\n`{old_word}` → `{new_word}`"
+                    f"✅ **Added:** `{old_word}` → `{new_word}`"
                 )
             else:
-                await event.respond(
-                    "❌ Wrong format.\nUse: `/addword oldword:newword`"
-                )
+                await event.respond("❌ Use: `/addword oldword:newword`")
         except Exception:
-            await event.respond("❌ Error. Use: `/addword oldword:newword`")
+            await event.respond("❌ Use: `/addword oldword:newword`")
 
     elif full_text.lower().startswith("/removeword "):
         word = full_text[12:].strip()
@@ -368,14 +349,9 @@ async def command_menu(event):
                 [f"• `{k}` → `{v}`"
                  for k, v in SETTINGS["custom_replacements"].items()]
             )
-            await event.respond(
-                f"📝 **Custom Replacements:**\n\n{replacements}"
-            )
+            await event.respond(f"📝 **Replacements:**\n\n{replacements}")
         else:
-            await event.respond(
-                "📝 No custom replacements yet.\n"
-                "Use `/addword old:new`"
-            )
+            await event.respond("📝 None yet. Use `/addword old:new`")
 
     elif full_text.lower().startswith("/blockword "):
         word = full_text[11:].strip()
@@ -383,7 +359,7 @@ async def command_menu(event):
             SETTINGS["blocked_words"].append(word)
             await event.respond(f"🚫 **Blocked:** `{word}`")
         else:
-            await event.respond(f"⚠️ Already blocked: `{word}`")
+            await event.respond(f"⚠️ Already blocked.")
 
     elif full_text.lower().startswith("/unblockword "):
         word = full_text[13:].strip()
@@ -391,17 +367,14 @@ async def command_menu(event):
             SETTINGS["blocked_words"].remove(word)
             await event.respond(f"✅ **Unblocked:** `{word}`")
         else:
-            await event.respond(f"❌ `{word}` not in blocked list.")
+            await event.respond(f"❌ Not in blocked list.")
 
     elif command == "/blocklist":
         if SETTINGS["blocked_words"]:
             words = "\n".join([f"• `{w}`" for w in SETTINGS["blocked_words"]])
             await event.respond(f"🚫 **Blocked Words:**\n\n{words}")
         else:
-            await event.respond(
-                "✅ No words blocked.\n"
-                "Use `/blockword word`"
-            )
+            await event.respond("✅ None. Use `/blockword word`")
 
     elif command == "/channels":
         await event.respond(
@@ -426,20 +399,31 @@ async def album_handler(event):
     if not destination_id:
         return
 
+    # Skip audio/video
     for msg in event.messages:
         if is_audio_message(msg) or is_video_message(msg):
             print("⏭️ Skipped album: audio/video")
             return
 
+    # Must have valid signal caption
     caption = None
+    has_valid_caption = False
     for msg in event.messages:
         if msg.message:
             if is_blocked_image(msg.message):
                 print("⏭️ Skipped album: blocked content")
                 return
-            caption = clean_message(msg.message)
-            break
+            if is_allowed_message(msg.message):
+                has_valid_caption = True
+                caption = clean_message(msg.message)
+                break
 
+    # Block albums with no valid signal caption
+    if not has_valid_caption:
+        print("⏭️ Skipped album: no valid signal caption")
+        return
+
+    # Only copy photos
     media_files = [
         msg.media for msg in event.messages
         if is_photo_message(msg)
@@ -488,14 +472,22 @@ async def replication_engine(event):
     if not raw_text and not has_media:
         return
 
+    # --- STRICT IMAGE FILTERING ---
     if is_photo:
-        if raw_text and is_blocked_image(raw_text):
-            print("⏭️ Skipped: blocked image")
+        # No caption = block
+        if not raw_text:
+            print("⏭️ Skipped: photo with no caption")
             return
-        if raw_text and not is_allowed_message(raw_text):
-            print("⏭️ Skipped: photo with non-signal caption")
+        # Blocked content = block
+        if is_blocked_image(raw_text):
+            print("⏭️ Skipped: blocked image content")
+            return
+        # Caption not a valid signal = block
+        if not is_allowed_message(raw_text):
+            print("⏭️ Skipped: photo caption not a signal")
             return
 
+    # --- TEXT ONLY FILTERING ---
     if not has_media:
         if not raw_text:
             return
@@ -509,6 +501,7 @@ async def replication_engine(event):
             print("⏭️ Skipped: blocked word")
             return
 
+    # --- PROCESS TEXT ---
     final_text = None
     if raw_text:
         final_text = clean_message(raw_text)
@@ -523,6 +516,7 @@ async def replication_engine(event):
             except Exception as e:
                 print(f"Translation error: {e}")
 
+    # --- SEND ---
     try:
         await user_client.send_message(
             destination_id,
