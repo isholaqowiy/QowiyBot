@@ -68,10 +68,9 @@ BLOCKED_IMAGE_PHRASES = [
     r"canal vip",
     r"señales de day trading",
     r"participantes",
-    r"screen",
 ]
 
-# --- VALID TEXT AND IMAGE CAPTIONS TO COPY ---
+# --- VALID MESSAGES TO COPY ---
 ALLOWED_PATTERNS = [
     r"señal lista",
     r"pendientes",
@@ -91,13 +90,29 @@ ALLOWED_PATTERNS = [
     r"\btp2\b",
     r"\btp3\b",
     r"\btp4\b",
-    r"asegura el",
-    r"asegura tu",
+    r"\btp\d\b",
+    r"asegura",
+    r"asegurar",
     r"todo en break",
     r"break even",
+    r"breakeven",
+    r"break en",
+    r"colocar break",
+    r"coloquen break",
+    r"place break",
+    r"poner break",
+    r"mover break",
+    r"están en break",
+    r"en break",
+    r"50%",
+    r"secure.*profit",
+    r"ensure.*profit",
+    r"ganancias",
     r"pagando",
+    r"dentro\b",
     r"dentro del mejor precio",
     r"seguimos dentro",
+    r"seguimos",
     r"cierra",
     r"razón para",
     r"razon para",
@@ -111,6 +126,11 @@ ALLOWED_PATTERNS = [
     r"alcanzado",
     r"invalidada",
     r"retroceso",
+    r"tp.*abierto",
+    r"colocar",
+    r"coloquen",
+    r"que rico",
+    r"desde el mejor precio",
 ]
 
 # --- SYSTEM VARIABLES ---
@@ -213,7 +233,9 @@ def clean_message(text):
     for pattern in NAMES_TO_REMOVE:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
     text = re.sub(r'@\w+', '', text)
-    text = re.sub(r'https?://\S+|t\.me/\S+|www\.\S+', '', text)
+    text = re.sub(
+        r'https?://\S+|t\.me/\S+|www\.\S+', '', text
+    )
     for pattern, replacement in WORD_REPLACEMENTS.items():
         text = re.sub(pattern, replacement, text)
     for old, new in SETTINGS["custom_replacements"].items():
@@ -277,7 +299,8 @@ async def command_menu(event):
             f"• Bot State: `{paused}`\n"
             f"• Translation: `{translate}`\n"
             f"• Language: `{SETTINGS['target_language'].upper()}`\n"
-            f"• Custom Replacements: `{len(SETTINGS['custom_replacements'])}`\n"
+            f"• Custom Replacements: "
+            f"`{len(SETTINGS['custom_replacements'])}`\n"
             f"• Blocked Words: `{len(SETTINGS['blocked_words'])}`\n\n"
             f"📡 **Routing:**\n"
             f"• HardScalping Room → SCALPING JZ GOLD\n"
@@ -311,13 +334,19 @@ async def command_menu(event):
 
     elif command.startswith("/language "):
         lang = command.split("/language ")[1].strip()
-        supported = ["en", "es", "fr", "de", "pt", "ar", "zh", "ru", "it"]
+        supported = [
+            "en", "es", "fr", "de", "pt",
+            "ar", "zh", "ru", "it"
+        ]
         if lang in supported:
             SETTINGS["target_language"] = lang
-            await event.respond(f"🌐 **Language set to `{lang.upper()}`**")
+            await event.respond(
+                f"🌐 **Language set to `{lang.upper()}`**"
+            )
         else:
             await event.respond(
-                f"❌ Unsupported. Supported: `{', '.join(supported)}`"
+                f"❌ Unsupported.\n"
+                f"Supported: `{', '.join(supported)}`"
             )
 
     elif full_text.lower().startswith("/addword "):
@@ -331,9 +360,13 @@ async def command_menu(event):
                     f"✅ **Added:** `{old_word}` → `{new_word}`"
                 )
             else:
-                await event.respond("❌ Use: `/addword oldword:newword`")
+                await event.respond(
+                    "❌ Use: `/addword oldword:newword`"
+                )
         except Exception:
-            await event.respond("❌ Use: `/addword oldword:newword`")
+            await event.respond(
+                "❌ Use: `/addword oldword:newword`"
+            )
 
     elif full_text.lower().startswith("/removeword "):
         word = full_text[12:].strip()
@@ -349,9 +382,13 @@ async def command_menu(event):
                 [f"• `{k}` → `{v}`"
                  for k, v in SETTINGS["custom_replacements"].items()]
             )
-            await event.respond(f"📝 **Replacements:**\n\n{replacements}")
+            await event.respond(
+                f"📝 **Replacements:**\n\n{replacements}"
+            )
         else:
-            await event.respond("📝 None yet. Use `/addword old:new`")
+            await event.respond(
+                "📝 None yet. Use `/addword old:new`"
+            )
 
     elif full_text.lower().startswith("/blockword "):
         word = full_text[11:].strip()
@@ -371,10 +408,14 @@ async def command_menu(event):
 
     elif command == "/blocklist":
         if SETTINGS["blocked_words"]:
-            words = "\n".join([f"• `{w}`" for w in SETTINGS["blocked_words"]])
+            words = "\n".join(
+                [f"• `{w}`" for w in SETTINGS["blocked_words"]]
+            )
             await event.respond(f"🚫 **Blocked Words:**\n\n{words}")
         else:
-            await event.respond("✅ None. Use `/blockword word`")
+            await event.respond(
+                "✅ None. Use `/blockword word`"
+            )
 
     elif command == "/channels":
         await event.respond(
@@ -399,13 +440,11 @@ async def album_handler(event):
     if not destination_id:
         return
 
-    # Skip audio/video
     for msg in event.messages:
         if is_audio_message(msg) or is_video_message(msg):
             print("⏭️ Skipped album: audio/video")
             return
 
-    # Must have valid signal caption
     caption = None
     has_valid_caption = False
     for msg in event.messages:
@@ -418,12 +457,10 @@ async def album_handler(event):
                 caption = clean_message(msg.message)
                 break
 
-    # Block albums with no valid signal caption
     if not has_valid_caption:
         print("⏭️ Skipped album: no valid signal caption")
         return
 
-    # Only copy photos
     media_files = [
         msg.media for msg in event.messages
         if is_photo_message(msg)
@@ -472,27 +509,24 @@ async def replication_engine(event):
     if not raw_text and not has_media:
         return
 
-    # --- STRICT IMAGE FILTERING ---
+    # Strict photo filtering
     if is_photo:
-        # No caption = block
         if not raw_text:
             print("⏭️ Skipped: photo with no caption")
             return
-        # Blocked content = block
         if is_blocked_image(raw_text):
-            print("⏭️ Skipped: blocked image content")
+            print("⏭️ Skipped: blocked image")
             return
-        # Caption not a valid signal = block
         if not is_allowed_message(raw_text):
             print("⏭️ Skipped: photo caption not a signal")
             return
 
-    # --- TEXT ONLY FILTERING ---
+    # Text only filtering
     if not has_media:
         if not raw_text:
             return
         if not is_allowed_message(raw_text):
-            print("⏭️ Skipped: not allowed message")
+            print("⏭️ Skipped: not allowed")
             return
         if has_links(raw_text):
             print("⏭️ Skipped: has links")
@@ -501,7 +535,6 @@ async def replication_engine(event):
             print("⏭️ Skipped: blocked word")
             return
 
-    # --- PROCESS TEXT ---
     final_text = None
     if raw_text:
         final_text = clean_message(raw_text)
@@ -516,7 +549,6 @@ async def replication_engine(event):
             except Exception as e:
                 print(f"Translation error: {e}")
 
-    # --- SEND ---
     try:
         await user_client.send_message(
             destination_id,
