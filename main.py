@@ -19,8 +19,8 @@ ADMIN_ID = 7559409737  # Omar
 
 # --- CHANNEL ROUTING ---
 CHANNEL_MAP = {
-    -1003745031724: -1003820544434,
-    -1003189185116: -1003912710963,
+    -1003745031724: -1003820544434,  # Golden"HardScalping"Room → SCALPING JZ GOLD
+    -1003189185116: -1003912710963,  # Golden"Daytrading"Room → DAYTRADING JZ GOLD
 }
 
 # --- NAMES TO REPLACE ---
@@ -45,6 +45,9 @@ NAMES_TO_REMOVE = [
     r"BlockSavvyMxQ\s*",
     r"MyForexSignals\s*",
     r"HARDSCALPING\s*",
+    r"Los Visionarios\s*",
+    r"LOS VISIONARIOS\s*",
+    r"Visionarios\s*",
 ]
 
 # --- WORD REPLACEMENTS ---
@@ -55,19 +58,38 @@ WORD_REPLACEMENTS = {
     r"Compra\b": "BUY",
 }
 
-# --- IMAGES TO BLOCK ---
+# --- IMAGES TO BLOCK (based on caption text) ---
 BLOCKED_IMAGE_PHRASES = [
+    r"los visionarios",
     r"visionarios",
+    r"cuánto habrías ganado",
+    r"cuanto habrias ganado",
+    r"pips netos",
+    r"resultado semanal",
+    r"resultado acumulado",
+    r"resultado.*tabla",
+    r"ganancia.*capital",
+    r"capital.*usd",
+    r"solo entrada",
+    r"lunes.*martes.*miercoles",
+    r"lunes.*martes.*miércoles",
+    r"day trading.*oro",
     r"rendimiento diario",
     r"rendimiento del canal",
     r"beneficio neto",
     r"tasa de ganancia",
-    r"los visionarios",
     r"reporte",
     r"resultado",
     r"canal vip",
-    r"señales de day trading",
     r"participantes",
+    r"review",
+    r"testimonial",
+    r"subscribe",
+    r"suscri",
+    r"join",
+    r"únete",
+    r"promotion",
+    r"promo",
 ]
 
 # --- VALID MESSAGES TO COPY ---
@@ -80,6 +102,7 @@ ALLOWED_PATTERNS = [
     r"buy\b",
     r"entrar entre",
     r"entry",
+    r"entrada",
     r"xauusd",
     r"eurusd",
     r"gbpusd",
@@ -90,9 +113,10 @@ ALLOWED_PATTERNS = [
     r"\btp2\b",
     r"\btp3\b",
     r"\btp4\b",
-    r"\btp\d\b",
+    r"\btp\s*\d\b",
+    r"take profit",
     r"asegura",
-    r"asegurar",
+    r"secure",
     r"todo en break",
     r"break even",
     r"breakeven",
@@ -105,13 +129,9 @@ ALLOWED_PATTERNS = [
     r"están en break",
     r"en break",
     r"50%",
-    r"secure.*profit",
-    r"ensure.*profit",
     r"ganancias",
     r"pagando",
     r"dentro\b",
-    r"dentro del mejor precio",
-    r"seguimos dentro",
     r"seguimos",
     r"cierra",
     r"razón para",
@@ -120,17 +140,17 @@ ALLOWED_PATTERNS = [
     r"patron",
     r"engulfing",
     r"base de",
-    r"super entrada",
-    r"hit tp",
-    r"corriendo",
     r"alcanzado",
     r"invalidada",
     r"retroceso",
     r"tp.*abierto",
+    r"corriendo",
     r"colocar",
     r"coloquen",
     r"que rico",
     r"desde el mejor precio",
+    r"super entrada",
+    r"hit tp",
 ]
 
 # --- SYSTEM VARIABLES ---
@@ -142,9 +162,23 @@ SETTINGS = {
     "blocked_words": [],
 }
 
-print("Starting dual-engine automation pipeline...")
+LANGUAGES = {
+    "🇬🇧 English": "en",
+    "🇪🇸 Spanish": "es",
+    "🇫🇷 French": "fr",
+    "🇩🇪 German": "de",
+    "🇧🇷 Portuguese": "pt",
+    "🇸🇦 Arabic": "ar",
+    "🇨🇳 Chinese": "zh",
+    "🇷🇺 Russian": "ru",
+    "🇮🇹 Italian": "it",
+}
 
-user_client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+print("Starting Omar Channel Replicator Bot...")
+
+user_client = TelegramClient(
+    StringSession(SESSION_STRING), API_ID, API_HASH
+)
 bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
 
 
@@ -189,25 +223,19 @@ def is_photo_message(message):
     return isinstance(message.media, MessageMediaPhoto)
 
 
-def has_links(text):
-    if not text:
-        return False
-    return bool(re.search(
-        r'https?://\S+|t\.me/\S+|www\.\S+',
-        text, re.IGNORECASE
-    ))
-
-
 def is_blocked_image(text):
+    """Block images with certain phrases in caption."""
     if not text:
         return False
     for phrase in BLOCKED_IMAGE_PHRASES:
         if re.search(phrase, text, re.IGNORECASE):
+            print(f"🚫 Blocked image phrase: {phrase}")
             return True
     return False
 
 
 def is_allowed_message(text):
+    """Check if message contains valid trading content."""
     if not text:
         return False
     for pattern in ALLOWED_PATTERNS:
@@ -225,24 +253,88 @@ def is_blocked_word_found(text):
     return False
 
 
+def has_links(text):
+    if not text:
+        return False
+    return bool(re.search(
+        r'https?://\S+|t\.me/\S+|www\.\S+',
+        text, re.IGNORECASE
+    ))
+
+
 def clean_message(text):
+    """Remove names, links, handles and normalize."""
     if not text:
         return text
+    # Replace person names
     for pattern, replacement in NAMES_TO_REPLACE:
-        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        text = re.sub(
+            pattern, replacement, text, flags=re.IGNORECASE
+        )
+    # Remove channel/brand names
     for pattern in NAMES_TO_REMOVE:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    # Remove @usernames and links
     text = re.sub(r'@\w+', '', text)
     text = re.sub(
         r'https?://\S+|t\.me/\S+|www\.\S+', '', text
     )
+    # Apply word replacements
     for pattern, replacement in WORD_REPLACEMENTS.items():
         text = re.sub(pattern, replacement, text)
+    # Apply custom replacements
     for old, new in SETTINGS["custom_replacements"].items():
-        text = re.sub(re.escape(old), new, text, flags=re.IGNORECASE)
+        text = re.sub(
+            re.escape(old), new, text, flags=re.IGNORECASE
+        )
+    # Translate if enabled
+    if SETTINGS["ai_translate"] and text:
+        try:
+            translated = GoogleTranslator(
+                source='auto',
+                target=SETTINGS["target_language"]
+            ).translate(text)
+            if translated:
+                text = translated
+        except Exception as e:
+            print(f"Translation error: {e}")
+    # Clean up blank lines
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
     return text
+
+
+def get_main_menu_buttons():
+    translate_status = (
+        "✅ ON" if SETTINGS["ai_translate"] else "🛑 OFF"
+    )
+    pause_label = (
+        "▶️ Resume" if SETTINGS["paused"] else "⏸ Pause"
+    )
+    return [
+        [events.Button.inline(
+            f"🌐 Translation: {translate_status}",
+            "toggle_translate"
+        )],
+        [events.Button.inline("🗣 Change Language", "change_language")],
+        [events.Button.inline(pause_label, "toggle_pause")],
+        [events.Button.inline("📊 Status", "show_status")],
+        [events.Button.inline("📡 Channels", "show_channels")],
+        [events.Button.inline("❌ Close", "close")],
+    ]
+
+
+async def safe_edit(event, text, buttons=None):
+    try:
+        if buttons:
+            await event.edit(text, buttons=buttons)
+        else:
+            await event.edit(text)
+    except Exception as e:
+        if "not modified" in str(e).lower():
+            pass
+        else:
+            print(f"Edit error: {e}")
 
 
 # -------------------------------------------------------------------
@@ -258,10 +350,14 @@ async def command_menu(event):
 
     if command == "/start":
         await event.respond(
-            "👋 **Welcome to Channel Replicator Bot!**\n\n"
-            "I automatically copy trading signals from source "
-            "channels to your destination channels.\n\n"
-            "Type /help to see all available commands."
+            "⚙️ **Channel Replicator Control Panel**\n\n"
+            "Commands:\n"
+            "➡️ `/ai on` - Enable translation\n"
+            "➡️ `/ai off` - Disable translation (default)\n"
+            "➡️ `/status` - Check current bot status\n"
+            "➡️ `/pause` - Pause copying\n"
+            "➡️ `/resume` - Resume copying\n"
+            "➡️ `/help` - All commands"
         )
 
     elif command == "/help":
@@ -277,9 +373,9 @@ async def command_menu(event):
             "**🌐 Translation:**\n"
             "➡️ `/ai on` - Enable translation\n"
             "➡️ `/ai off` - Disable translation\n"
-            "➡️ `/language en` - Set to English\n"
-            "➡️ `/language es` - Set to Spanish\n"
-            "➡️ `/language fr` - Set to French\n\n"
+            "➡️ `/language en` - English\n"
+            "➡️ `/language es` - Spanish\n"
+            "➡️ `/language fr` - French\n\n"
             "**✏️ Word Management:**\n"
             "➡️ `/addword old:new` - Replace a word\n"
             "➡️ `/removeword word` - Remove replacement\n"
@@ -294,14 +390,20 @@ async def command_menu(event):
     elif command == "/status":
         paused = "⏸ PAUSED" if SETTINGS["paused"] else "▶️ RUNNING"
         translate = "✅ ON" if SETTINGS["ai_translate"] else "🛑 OFF"
+        lang_name = next(
+            (k for k, v in LANGUAGES.items()
+             if v == SETTINGS["target_language"]),
+            SETTINGS["target_language"]
+        )
         await event.respond(
             f"📊 **Current System Status:**\n\n"
             f"• Bot State: `{paused}`\n"
             f"• Translation: `{translate}`\n"
-            f"• Language: `{SETTINGS['target_language'].upper()}`\n"
+            f"• Language: `{lang_name}`\n"
             f"• Custom Replacements: "
             f"`{len(SETTINGS['custom_replacements'])}`\n"
-            f"• Blocked Words: `{len(SETTINGS['blocked_words'])}`\n\n"
+            f"• Blocked Words: "
+            f"`{len(SETTINGS['blocked_words'])}`\n\n"
             f"📡 **Routing:**\n"
             f"• HardScalping Room → SCALPING JZ GOLD\n"
             f"• Daytrading Room → DAYTRADING JZ GOLD"
@@ -311,42 +413,49 @@ async def command_menu(event):
         SETTINGS["paused"] = True
         await event.respond(
             "⏸ **Bot Paused.**\n"
-            "No messages will be copied until /resume"
+            "Send /resume to restart copying."
         )
 
     elif command == "/resume":
         SETTINGS["paused"] = False
         await event.respond(
             "▶️ **Bot Resumed.**\n"
-            "Messages are being copied again."
+            "Copying signals again."
         )
 
     elif command == "/ai on":
         SETTINGS["ai_translate"] = True
+        lang_name = next(
+            (k for k, v in LANGUAGES.items()
+             if v == SETTINGS["target_language"]),
+            SETTINGS["target_language"]
+        )
         await event.respond(
-            f"✅ **Translation Enabled.**\n"
-            f"Translating to `{SETTINGS['target_language'].upper()}`"
+            f"✅ **Translation ON** → `{lang_name}`"
         )
 
     elif command == "/ai off":
         SETTINGS["ai_translate"] = False
-        await event.respond("🛑 **Translation Disabled.**")
+        await event.respond(
+            "🛑 **Translation OFF.**\n"
+            "Messages keep original language."
+        )
 
     elif command.startswith("/language "):
         lang = command.split("/language ")[1].strip()
-        supported = [
-            "en", "es", "fr", "de", "pt",
-            "ar", "zh", "ru", "it"
-        ]
-        if lang in supported:
+        if lang in LANGUAGES.values():
             SETTINGS["target_language"] = lang
+            lang_name = next(
+                (k for k, v in LANGUAGES.items() if v == lang),
+                lang
+            )
             await event.respond(
-                f"🌐 **Language set to `{lang.upper()}`**"
+                f"🌐 **Language set to {lang_name}**"
             )
         else:
             await event.respond(
-                f"❌ Unsupported.\n"
-                f"Supported: `{', '.join(supported)}`"
+                f"❌ Unsupported: `{lang}`\n"
+                f"Try: en, es, fr, de, pt"
             )
 
     elif full_text.lower().startswith("/addword "):
@@ -380,7 +489,9 @@ async def command_menu(event):
         if SETTINGS["custom_replacements"]:
             replacements = "\n".join(
                 [f"• `{k}` → `{v}`"
-                 for k, v in SETTINGS["custom_replacements"].items()]
+                 for k, v in SETTINGS[
+                     "custom_replacements"
+                 ].items()]
             )
             await event.respond(
                 f"📝 **Replacements:**\n\n{replacements}"
@@ -411,7 +522,9 @@ async def command_menu(event):
             words = "\n".join(
                 [f"• `{w}`" for w in SETTINGS["blocked_words"]]
             )
-            await event.respond(f"🚫 **Blocked Words:**\n\n{words}")
+            await event.respond(
+                f"🚫 **Blocked Words:**\n\n{words}"
+            )
         else:
             await event.respond(
                 "✅ None. Use `/blockword word`"
@@ -440,27 +553,33 @@ async def album_handler(event):
     if not destination_id:
         return
 
+    # Skip audio/video
     for msg in event.messages:
         if is_audio_message(msg) or is_video_message(msg):
             print("⏭️ Skipped album: audio/video")
             return
 
+    # Must have valid signal caption
     caption = None
     has_valid_caption = False
     for msg in event.messages:
         if msg.message:
-            if is_blocked_image(msg.message):
-                print("⏭️ Skipped album: blocked content")
+            raw = msg.message
+            # Block Visionarios and other unwanted images
+            if is_blocked_image(raw):
+                print("⏭️ Skipped album: blocked image")
                 return
-            if is_allowed_message(msg.message):
+            if is_allowed_message(raw):
                 has_valid_caption = True
-                caption = clean_message(msg.message)
+                caption = clean_message(raw)
                 break
 
+    # Block albums with no valid signal caption
     if not has_valid_caption:
         print("⏭️ Skipped album: no valid signal caption")
         return
 
+    # Only copy photos
     media_files = [
         msg.media for msg in event.messages
         if is_photo_message(msg)
@@ -509,24 +628,28 @@ async def replication_engine(event):
     if not raw_text and not has_media:
         return
 
-    # Strict photo filtering
+    # --- STRICT PHOTO FILTERING ---
     if is_photo:
+        # Block photos with no caption completely
+        # (Visionarios images have no caption)
         if not raw_text:
             print("⏭️ Skipped: photo with no caption")
             return
+        # Block photos with blocked image phrases in caption
         if is_blocked_image(raw_text):
-            print("⏭️ Skipped: blocked image")
+            print("⏭️ Skipped: blocked image phrase")
             return
+        # Only allow photos with valid signal captions
         if not is_allowed_message(raw_text):
-            print("⏭️ Skipped: photo caption not a signal")
+            print("⏭️ Skipped: photo not a valid signal")
             return
 
-    # Text only filtering
+    # --- TEXT ONLY FILTERING ---
     if not has_media:
         if not raw_text:
             return
         if not is_allowed_message(raw_text):
-            print("⏭️ Skipped: not allowed")
+            print("⏭️ Skipped: not allowed message")
             return
         if has_links(raw_text):
             print("⏭️ Skipped: has links")
@@ -535,29 +658,26 @@ async def replication_engine(event):
             print("⏭️ Skipped: blocked word")
             return
 
-    final_text = None
-    if raw_text:
-        final_text = clean_message(raw_text)
-        if SETTINGS["ai_translate"] and final_text:
-            try:
-                translated = GoogleTranslator(
-                    source='auto',
-                    target=SETTINGS["target_language"]
-                ).translate(final_text)
-                if translated:
-                    final_text = translated
-            except Exception as e:
-                print(f"Translation error: {e}")
+    # --- PROCESS AND SEND ---
+    final_text = clean_message(raw_text) if raw_text else None
 
     try:
-        await user_client.send_message(
-            destination_id,
-            final_text,
-            file=event.message.media if is_photo else None
-        )
+        if is_photo:
+            await user_client.send_file(
+                destination_id,
+                event.message.media,
+                caption=final_text
+            )
+        else:
+            if not final_text:
+                return
+            await user_client.send_message(
+                destination_id,
+                final_text
+            )
         print(f"✅ Mirrored: {source_id} → {destination_id}")
-    except Exception as delivery_error:
-        print(f"❌ Delivery failed: {delivery_error}")
+    except Exception as e:
+        print(f"❌ Delivery failed: {e}")
 
 
 # -------------------------------------------------------------------
@@ -566,20 +686,22 @@ async def replication_engine(event):
 async def main():
     await user_client.connect()
     if not await user_client.is_user_authorized():
-        print("❌ ERROR: Session string is invalid or expired!")
+        print("❌ ERROR: Session string invalid or expired!")
         return
     print("✅ Userbot (scraper) is live.")
 
     await bot_client.start(bot_token=BOT_TOKEN)
     print("✅ Bot control panel is live.")
 
-    print("🚀 Both engines running!")
+    print("🚀 Omar Channel Replicator Bot RUNNING!")
     print("📡 Golden\"HardScalping\"Room → SCALPING JZ GOLD")
     print("📡 Golden\"Daytrading\"Room → DAYTRADING JZ GOLD")
+    print("🚫 Visionarios images: BLOCKED")
 
     await asyncio.gather(
         user_client.run_until_disconnected(),
         bot_client.run_until_disconnected()
     )
+
 
 asyncio.run(main())
