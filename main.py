@@ -7,6 +7,11 @@ from telethon.tl.types import (
     MessageMediaPhoto,
     MessageMediaDocument,
 )
+from telethon.errors import (
+    SessionExpiredError,
+    SessionRevokedError,
+    AuthKeyUnregisteredError,
+)
 from deep_translator import GoogleTranslator
 
 # --- ENVIRONMENT CONFIGURATION ---
@@ -19,13 +24,14 @@ ADMIN_ID = 7559409737  # Omar
 
 # --- CHANNEL ROUTING ---
 CHANNEL_MAP = {
-    -1003745031724: -1003820544434,  # Golden"HardScalping"Room → SCALPING JZ GOLD
-    -1003189185116: -1003912710963,  # Golden"Daytrading"Room → DAYTRADING JZ GOLD
+    -1003745031724: -1003820544434,  # HardScalping → SCALPING JZ GOLD
+    -1003189185116: -1003912710963,  # Daytrading → DAYTRADING JZ GOLD
 }
 
 # --- NAMES TO REPLACE ---
 NAMES_TO_REPLACE = [
-    (r"Analisis Heury,?\s*Elián\s*y\s*Jafet\s*[🧠📊🔠]*\s*", "Analisis Manuel Jimenez "),
+    (r"Analisis Heury,?\s*Elián\s*y\s*Jafet\s*[🧠📊🔠]*\s*",
+     "Analisis Manuel Jimenez "),
     (r"Analisis Heury,?\s*", "Analisis Manuel Jimenez "),
     (r"Elián\s*y\s*Jafet\s*", ""),
     (r"Elián\s*", ""),
@@ -52,13 +58,13 @@ NAMES_TO_REMOVE = [
 
 # --- WORD REPLACEMENTS ---
 WORD_REPLACEMENTS = {
-    r"VENDER": "SELL",
-    r"COMPRAR": "BUY",
-    r"Vende\b": "SELL",
-    r"Compra\b": "BUY",
+    r"\bVENDER\b": "SELL",
+    r"\bCOMPRAR\b": "BUY",
+    r"\bVende\b": "SELL",
+    r"\bCompra\b": "BUY",
 }
 
-# --- IMAGES TO BLOCK (based on caption text) ---
+# --- IMAGES TO BLOCK ---
 BLOCKED_IMAGE_PHRASES = [
     r"los visionarios",
     r"visionarios",
@@ -79,14 +85,10 @@ BLOCKED_IMAGE_PHRASES = [
     r"beneficio neto",
     r"tasa de ganancia",
     r"reporte",
-    r"resultado",
     r"canal vip",
     r"participantes",
-    r"review",
-    r"testimonial",
     r"subscribe",
     r"suscri",
-    r"join",
     r"únete",
     r"promotion",
     r"promo",
@@ -162,18 +164,6 @@ SETTINGS = {
     "blocked_words": [],
 }
 
-LANGUAGES = {
-    "🇬🇧 English": "en",
-    "🇪🇸 Spanish": "es",
-    "🇫🇷 French": "fr",
-    "🇩🇪 German": "de",
-    "🇧🇷 Portuguese": "pt",
-    "🇸🇦 Arabic": "ar",
-    "🇨🇳 Chinese": "zh",
-    "🇷🇺 Russian": "ru",
-    "🇮🇹 Italian": "it",
-}
-
 print("Starting Omar Channel Replicator Bot...")
 
 user_client = TelegramClient(
@@ -182,6 +172,9 @@ user_client = TelegramClient(
 bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
 
 
+# -------------------------------------------------------------------
+# HELPER FUNCTIONS
+# -------------------------------------------------------------------
 def is_authorized(sender_id):
     return sender_id in [OWNER_ID, ADMIN_ID]
 
@@ -224,18 +217,16 @@ def is_photo_message(message):
 
 
 def is_blocked_image(text):
-    """Block images with certain phrases in caption."""
     if not text:
         return False
     for phrase in BLOCKED_IMAGE_PHRASES:
         if re.search(phrase, text, re.IGNORECASE):
-            print(f"🚫 Blocked image phrase: {phrase}")
+            print(f"🚫 Blocked image: {phrase}")
             return True
     return False
 
 
 def is_allowed_message(text):
-    """Check if message contains valid trading content."""
     if not text:
         return False
     for pattern in ALLOWED_PATTERNS:
@@ -263,7 +254,6 @@ def has_links(text):
 
 
 def clean_message(text):
-    """Remove names, links, handles and normalize."""
     if not text:
         return text
     # Replace person names
@@ -298,43 +288,10 @@ def clean_message(text):
                 text = translated
         except Exception as e:
             print(f"Translation error: {e}")
-    # Clean up blank lines
+    # Clean up
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
     return text
-
-
-def get_main_menu_buttons():
-    translate_status = (
-        "✅ ON" if SETTINGS["ai_translate"] else "🛑 OFF"
-    )
-    pause_label = (
-        "▶️ Resume" if SETTINGS["paused"] else "⏸ Pause"
-    )
-    return [
-        [events.Button.inline(
-            f"🌐 Translation: {translate_status}",
-            "toggle_translate"
-        )],
-        [events.Button.inline("🗣 Change Language", "change_language")],
-        [events.Button.inline(pause_label, "toggle_pause")],
-        [events.Button.inline("📊 Status", "show_status")],
-        [events.Button.inline("📡 Channels", "show_channels")],
-        [events.Button.inline("❌ Close", "close")],
-    ]
-
-
-async def safe_edit(event, text, buttons=None):
-    try:
-        if buttons:
-            await event.edit(text, buttons=buttons)
-        else:
-            await event.edit(text)
-    except Exception as e:
-        if "not modified" in str(e).lower():
-            pass
-        else:
-            print(f"Edit error: {e}")
 
 
 # -------------------------------------------------------------------
@@ -352,12 +309,13 @@ async def command_menu(event):
         await event.respond(
             "⚙️ **Channel Replicator Control Panel**\n\n"
             "Commands:\n"
-            "➡️ `/ai on` - Enable translation\n"
-            "➡️ `/ai off` - Disable translation (default)\n"
-            "➡️ `/status` - Check current bot status\n"
+            "➡️ `/help` - All commands\n"
+            "➡️ `/status` - Current bot status\n"
             "➡️ `/pause` - Pause copying\n"
             "➡️ `/resume` - Resume copying\n"
-            "➡️ `/help` - All commands"
+            "➡️ `/ai on` - Enable translation\n"
+            "➡️ `/ai off` - Disable translation\n"
+            "➡️ `/ping` - Check bot is alive"
         )
 
     elif command == "/help":
@@ -366,7 +324,8 @@ async def command_menu(event):
             "**🔧 System:**\n"
             "➡️ `/start` - Welcome message\n"
             "➡️ `/help` - Show all commands\n"
-            "➡️ `/status` - Current bot status\n\n"
+            "➡️ `/status` - Current bot status\n"
+            "➡️ `/ping` - Check bot is alive\n\n"
             "**⏯ Control:**\n"
             "➡️ `/pause` - Pause all copying\n"
             "➡️ `/resume` - Resume copying\n\n"
@@ -374,8 +333,7 @@ async def command_menu(event):
             "➡️ `/ai on` - Enable translation\n"
             "➡️ `/ai off` - Disable translation\n"
             "➡️ `/language en` - English\n"
-            "➡️ `/language es` - Spanish\n"
-            "➡️ `/language fr` - French\n\n"
+            "➡️ `/language es` - Spanish\n\n"
             "**✏️ Word Management:**\n"
             "➡️ `/addword old:new` - Replace a word\n"
             "➡️ `/removeword word` - Remove replacement\n"
@@ -387,19 +345,25 @@ async def command_menu(event):
             "➡️ `/channels` - Show channel routing\n"
         )
 
+    elif command == "/ping":
+        await event.respond(
+            "🏓 **Pong!**\n"
+            "✅ Bot is alive and running.\n"
+            "📡 Monitoring both source channels."
+        )
+
     elif command == "/status":
-        paused = "⏸ PAUSED" if SETTINGS["paused"] else "▶️ RUNNING"
-        translate = "✅ ON" if SETTINGS["ai_translate"] else "🛑 OFF"
-        lang_name = next(
-            (k for k, v in LANGUAGES.items()
-             if v == SETTINGS["target_language"]),
-            SETTINGS["target_language"]
+        paused = (
+            "⏸ PAUSED" if SETTINGS["paused"] else "▶️ RUNNING"
+        )
+        translate = (
+            "✅ ON" if SETTINGS["ai_translate"] else "🛑 OFF"
         )
         await event.respond(
             f"📊 **Current System Status:**\n\n"
             f"• Bot State: `{paused}`\n"
             f"• Translation: `{translate}`\n"
-            f"• Language: `{lang_name}`\n"
+            f"• Language: `{SETTINGS['target_language'].upper()}`\n"
             f"• Custom Replacements: "
             f"`{len(SETTINGS['custom_replacements'])}`\n"
             f"• Blocked Words: "
@@ -425,37 +389,30 @@ async def command_menu(event):
 
     elif command == "/ai on":
         SETTINGS["ai_translate"] = True
-        lang_name = next(
-            (k for k, v in LANGUAGES.items()
-             if v == SETTINGS["target_language"]),
-            SETTINGS["target_language"]
-        )
         await event.respond(
-            f"✅ **Translation ON** → `{lang_name}`"
+            f"✅ **Translation ON** → "
+            f"`{SETTINGS['target_language'].upper()}`"
         )
 
     elif command == "/ai off":
         SETTINGS["ai_translate"] = False
-        await event.respond(
-            "🛑 **Translation OFF.**\n"
-            "Messages keep original language."
-        )
+        await event.respond("🛑 **Translation OFF.**")
 
     elif command.startswith("/language "):
         lang = command.split("/language ")[1].strip()
-        if lang in LANGUAGES.values():
+        supported = [
+            "en", "es", "fr", "de", "pt",
+            "ar", "zh", "ru", "it"
+        ]
+        if lang in supported:
             SETTINGS["target_language"] = lang
-            lang_name = next(
-                (k for k, v in LANGUAGES.items() if v == lang),
-                lang
-            )
             await event.respond(
-                f"🌐 **Language set to {lang_name}**"
+                f"🌐 **Language set to `{lang.upper()}`**"
             )
         else:
             await event.respond(
                 f"❌ Unsupported: `{lang}`\n"
-                f"Try: en, es, fr, de, pt"
+                f"Try: {', '.join(supported)}"
             )
 
     elif full_text.lower().startswith("/addword "):
@@ -464,7 +421,9 @@ async def command_menu(event):
             if len(parts) == 2:
                 old_word = parts[0].strip()
                 new_word = parts[1].strip()
-                SETTINGS["custom_replacements"][old_word] = new_word
+                SETTINGS["custom_replacements"][old_word] = (
+                    new_word
+                )
                 await event.respond(
                     f"✅ **Added:** `{old_word}` → `{new_word}`"
                 )
@@ -565,7 +524,6 @@ async def album_handler(event):
     for msg in event.messages:
         if msg.message:
             raw = msg.message
-            # Block Visionarios and other unwanted images
             if is_blocked_image(raw):
                 print("⏭️ Skipped album: blocked image")
                 return
@@ -574,12 +532,10 @@ async def album_handler(event):
                 caption = clean_message(raw)
                 break
 
-    # Block albums with no valid signal caption
     if not has_valid_caption:
         print("⏭️ Skipped album: no valid signal caption")
         return
 
-    # Only copy photos
     media_files = [
         msg.media for msg in event.messages
         if is_photo_message(msg)
@@ -628,23 +584,19 @@ async def replication_engine(event):
     if not raw_text and not has_media:
         return
 
-    # --- STRICT PHOTO FILTERING ---
+    # Strict photo filtering
     if is_photo:
-        # Block photos with no caption completely
-        # (Visionarios images have no caption)
         if not raw_text:
             print("⏭️ Skipped: photo with no caption")
             return
-        # Block photos with blocked image phrases in caption
         if is_blocked_image(raw_text):
             print("⏭️ Skipped: blocked image phrase")
             return
-        # Only allow photos with valid signal captions
         if not is_allowed_message(raw_text):
             print("⏭️ Skipped: photo not a valid signal")
             return
 
-    # --- TEXT ONLY FILTERING ---
+    # Text only filtering
     if not has_media:
         if not raw_text:
             return
@@ -658,7 +610,7 @@ async def replication_engine(event):
             print("⏭️ Skipped: blocked word")
             return
 
-    # --- PROCESS AND SEND ---
+    # Process and send
     final_text = clean_message(raw_text) if raw_text else None
 
     try:
@@ -681,26 +633,84 @@ async def replication_engine(event):
 
 
 # -------------------------------------------------------------------
+# RESILIENT CLIENT RUNNER
+# -------------------------------------------------------------------
+async def run_client_forever(client, name, start_kwargs=None):
+    """Keep client connected indefinitely with auto-reconnect."""
+    backoff = 5
+    while True:
+        try:
+            if not client.is_connected():
+                await client.connect()
+
+            if start_kwargs is not None:
+                await client.start(**start_kwargs)
+            else:
+                if not await client.is_user_authorized():
+                    print(
+                        f"❌ {name} session invalid/expired!\n"
+                        "Please generate a new session string."
+                    )
+                    return
+
+            print(f"✅ {name} connected.")
+            backoff = 5
+            await client.run_until_disconnected()
+            print(f"⚠️ {name} disconnected. Reconnecting...")
+
+        except (
+            SessionExpiredError,
+            SessionRevokedError,
+            AuthKeyUnregisteredError,
+        ) as e:
+            print(f"❌ Fatal session error on {name}: {e}")
+            print("Please generate a new session string.")
+            return
+        except Exception as e:
+            print(f"⚠️ {name} error: {e}")
+            print(f"🔄 Retrying {name} in {backoff}s...")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30)
+
+
+# -------------------------------------------------------------------
 # MAIN
 # -------------------------------------------------------------------
 async def main():
+    print("Connecting userbot...")
     await user_client.connect()
-    if not await user_client.is_user_authorized():
-        print("❌ ERROR: Session string invalid or expired!")
+
+    try:
+        if not await user_client.is_user_authorized():
+            print("❌ Session string invalid or expired!")
+            print("Please generate a new session string.")
+            return
+    except (
+        SessionExpiredError,
+        SessionRevokedError,
+        AuthKeyUnregisteredError,
+    ) as e:
+        print(f"❌ Session error: {e}")
         return
-    print("✅ Userbot (scraper) is live.")
+
+    print("✅ Userbot connected and authorized.")
+    print("📡 Source 1: Golden\"HardScalping\"Room")
+    print("📡 Source 2: Golden\"Daytrading\"Room")
 
     await bot_client.start(bot_token=BOT_TOKEN)
-    print("✅ Bot control panel is live.")
+    print("✅ Bot control panel connected.")
 
-    print("🚀 Omar Channel Replicator Bot RUNNING!")
-    print("📡 Golden\"HardScalping\"Room → SCALPING JZ GOLD")
-    print("📡 Golden\"Daytrading\"Room → DAYTRADING JZ GOLD")
-    print("🚫 Visionarios images: BLOCKED")
+    print("\n🚀 Omar Channel Replicator Bot RUNNING!")
+    print("📡 HardScalping Room → SCALPING JZ GOLD")
+    print("📡 Daytrading Room → DAYTRADING JZ GOLD")
+    print("🚫 Visionarios images: BLOCKED\n")
 
     await asyncio.gather(
-        user_client.run_until_disconnected(),
-        bot_client.run_until_disconnected()
+        run_client_forever(user_client, "Userbot"),
+        run_client_forever(
+            bot_client, "Bot",
+            start_kwargs={"bot_token": BOT_TOKEN}
+        ),
     )
 
 
