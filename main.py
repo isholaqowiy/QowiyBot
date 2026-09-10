@@ -31,8 +31,8 @@ CHANNEL_MAP = {
 # --- NAMES TO REPLACE ---
 NAMES_TO_REPLACE = [
     (r"Analisis Heury,?\s*Elián\s*y\s*Jafet\s*[🧠📊🔠]*\s*",
-     "Analisis Manuel Jimenez "),
-    (r"Analisis Heury,?\s*", "Analisis Manuel Jimenez "),
+     ""),
+    (r"Analisis Heury,?\s*", ""),
     (r"Elián\s*y\s*Jafet\s*", ""),
     (r"Elián\s*", ""),
     (r"Jafet\s*", ""),
@@ -56,14 +56,6 @@ NAMES_TO_REMOVE = [
     r"Visionarios\s*",
 ]
 
-# --- WORD REPLACEMENTS ---
-WORD_REPLACEMENTS = {
-    r"\bVENDER\b": "SELL",
-    r"\bCOMPRAR\b": "BUY",
-    r"\bVende\b": "SELL",
-    r"\bCompra\b": "BUY",
-}
-
 # --- IMAGES TO BLOCK ---
 BLOCKED_IMAGE_PHRASES = [
     r"los visionarios",
@@ -73,13 +65,6 @@ BLOCKED_IMAGE_PHRASES = [
     r"pips netos",
     r"resultado semanal",
     r"resultado acumulado",
-    r"resultado.*tabla",
-    r"ganancia.*capital",
-    r"capital.*usd",
-    r"solo entrada",
-    r"lunes.*martes.*miercoles",
-    r"lunes.*martes.*miércoles",
-    r"day trading.*oro",
     r"rendimiento diario",
     r"rendimiento del canal",
     r"beneficio neto",
@@ -103,8 +88,8 @@ ALLOWED_PATTERNS = [
     r"sell\b",
     r"buy\b",
     r"entrar entre",
-    r"entry",
     r"entrada",
+    r"entry",
     r"xauusd",
     r"eurusd",
     r"gbpusd",
@@ -116,20 +101,21 @@ ALLOWED_PATTERNS = [
     r"\btp3\b",
     r"\btp4\b",
     r"\btp\s*\d\b",
+    r"\btp\b",
     r"take profit",
     r"asegura",
     r"secure",
-    r"todo en break",
     r"break even",
     r"breakeven",
     r"break en",
+    r"\bbe\b",
     r"colocar break",
     r"coloquen break",
     r"place break",
-    r"poner break",
-    r"mover break",
-    r"están en break",
-    r"en break",
+    r"reentrada",
+    r"re.entrada",
+    r"segunda entrada",
+    r"2da entrada",
     r"50%",
     r"ganancias",
     r"pagando",
@@ -137,20 +123,13 @@ ALLOWED_PATTERNS = [
     r"seguimos",
     r"cierra",
     r"razón para",
-    r"razon para",
     r"patrón",
-    r"patron",
     r"engulfing",
-    r"base de",
     r"alcanzado",
     r"invalidada",
     r"retroceso",
-    r"tp.*abierto",
     r"corriendo",
     r"colocar",
-    r"coloquen",
-    r"que rico",
-    r"desde el mejor precio",
     r"super entrada",
     r"hit tp",
 ]
@@ -158,7 +137,7 @@ ALLOWED_PATTERNS = [
 # --- SYSTEM VARIABLES ---
 SETTINGS = {
     "ai_translate": False,
-    "target_language": "en",
+    "target_language": "es",
     "paused": False,
     "custom_replacements": {},
     "blocked_words": [],
@@ -170,6 +149,147 @@ user_client = TelegramClient(
     StringSession(SESSION_STRING), API_ID, API_HASH
 )
 bot_client = TelegramClient(StringSession(), API_ID, API_HASH)
+
+
+# -------------------------------------------------------------------
+# FORMAT TRANSFORMER
+# -------------------------------------------------------------------
+def transform_signal_format(text):
+    """
+    Transforms the signal from source format to Omar's
+    desired format exactly.
+
+    Source:
+    📉 VENDER XAUUSD 📉
+    📍 Entrada: 4420
+    ├ ❌ SL: 4424
+    └ 🔒 BE: 4415
+    🔄 Reentrada: 4424
+    ├ ❌ SL: 4430
+    └ 🔒 BE: 4420
+    🎯 TP: 4414 | 4408
+
+    Desired:
+    🚨 VENDER XAUUSD 🚨
+    Analisis hecho por Manuel Jimenez
+
+    📍 ENTRAR : 4420
+    STOP LOSS : 4424
+    COLOCAR BREAK EN : 4415
+
+    🔄 2da ENTRADA: 4424
+    STOP LOSS: 4430
+    COLOCAR BREAK EN : 4420
+
+    🎯 TP: 4414 | 4408
+    """
+    if not text:
+        return text
+
+    lines = text.split('\n')
+    new_lines = []
+    analyst_added = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            new_lines.append('')
+            continue
+
+        # --- Direction line (VENDER/COMPRAR/SELL/BUY) ---
+        # Replace leading emoji with 🚨 and trailing emoji with 🚨
+        direction_match = re.match(
+            r'^[^\w]*\s*((?:VENDER|COMPRAR|SELL|BUY)\s+\w+)\s*[^\w]*$',
+            stripped, re.IGNORECASE
+        )
+        if direction_match:
+            signal_text = direction_match.group(1).upper()
+            # Normalize BUY/SELL to Spanish
+            signal_text = re.sub(
+                r'\bSELL\b', 'VENDER', signal_text
+            )
+            signal_text = re.sub(
+                r'\bBUY\b', 'COMPRAR', signal_text
+            )
+            new_lines.append(f"🚨 {signal_text} 🚨")
+            if not analyst_added:
+                new_lines.append(
+                    "Analisis hecho por Manuel Jimenez"
+                )
+                new_lines.append('')
+                analyst_added = True
+            continue
+
+        # --- Entry line ---
+        entry_match = re.match(
+            r'^[📍├└|🔄\-\s]*(?:Entrada|Entry|ENTRADA|ENTRAR)\s*[:\-]?\s*(.+)$',
+            stripped, re.IGNORECASE
+        )
+        if entry_match and '🔄' not in stripped and 'Re' not in stripped:
+            value = entry_match.group(1).strip()
+            new_lines.append(f"📍 ENTRAR : {value}")
+            continue
+
+        # --- Re-entry / Second entry line ---
+        reentry_match = re.match(
+            r'^[🔄\-\s]*(?:Reentrada|Re.?entrada|Segunda\s*Entrada|2da\s*Entrada|Second\s*Entry)\s*[:\-]?\s*(.+)$',
+            stripped, re.IGNORECASE
+        )
+        if reentry_match:
+            value = reentry_match.group(1).strip()
+            new_lines.append(f"🔄 2da ENTRADA: {value}")
+            continue
+
+        # --- SL line ---
+        sl_match = re.match(
+            r'^[├└❌⛔🔴\-\s|]*(?:SL|Stop\s*Loss|STOP\s*LOSS)\s*[:\-]?\s*(.+)$',
+            stripped, re.IGNORECASE
+        )
+        if sl_match:
+            value = sl_match.group(1).strip()
+            new_lines.append(f"STOP LOSS : {value}")
+            continue
+
+        # --- BE / Break Even line ---
+        be_match = re.match(
+            r'^[└🔒✅\-\s|]*(?:BE|Break\s*Even|Breakeven|BREAK\s*EN|Colocar\s*Break)\s*[:\-]?\s*(.+)$',
+            stripped, re.IGNORECASE
+        )
+        if be_match:
+            value = be_match.group(1).strip()
+            new_lines.append(f"COLOCAR BREAK EN : {value}")
+            continue
+
+        # --- TP line ---
+        tp_match = re.match(
+            r'^[🎯✅\-\s]*(?:TP\d*|Take\s*Profit|TAKE\s*PROFIT)\s*[:\-]?\s*(.+)$',
+            stripped, re.IGNORECASE
+        )
+        if tp_match:
+            value = tp_match.group(1).strip()
+            # Keep TP line as-is but with standard emoji
+            new_lines.append(f"🎯 TP: {value}")
+            continue
+
+        # --- Keep other lines as-is (comments, updates etc) ---
+        # Remove branch chars that look messy
+        cleaned = re.sub(r'^[├└│\s]+', '', stripped)
+        if cleaned:
+            new_lines.append(cleaned)
+
+    # Clean up multiple consecutive blank lines
+    result_lines = []
+    prev_blank = False
+    for line in new_lines:
+        if line == '':
+            if not prev_blank:
+                result_lines.append(line)
+            prev_blank = True
+        else:
+            result_lines.append(line)
+            prev_blank = False
+
+    return '\n'.join(result_lines).strip()
 
 
 # -------------------------------------------------------------------
@@ -254,30 +374,36 @@ def has_links(text):
 
 
 def clean_message(text):
+    """Remove names/links then transform format."""
     if not text:
         return text
-    # Replace person names
+
+    # Step 1: Remove person names
     for pattern, replacement in NAMES_TO_REPLACE:
         text = re.sub(
             pattern, replacement, text, flags=re.IGNORECASE
         )
-    # Remove channel/brand names
+
+    # Step 2: Remove channel/brand names
     for pattern in NAMES_TO_REMOVE:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-    # Remove @usernames and links
+
+    # Step 3: Remove @usernames and links
     text = re.sub(r'@\w+', '', text)
     text = re.sub(
         r'https?://\S+|t\.me/\S+|www\.\S+', '', text
     )
-    # Apply word replacements
-    for pattern, replacement in WORD_REPLACEMENTS.items():
-        text = re.sub(pattern, replacement, text)
-    # Apply custom replacements
+
+    # Step 4: Apply custom replacements
     for old, new in SETTINGS["custom_replacements"].items():
         text = re.sub(
             re.escape(old), new, text, flags=re.IGNORECASE
         )
-    # Translate if enabled
+
+    # Step 5: Transform to Omar's desired format
+    text = transform_signal_format(text)
+
+    # Step 6: Translate if enabled
     if SETTINGS["ai_translate"] and text:
         try:
             translated = GoogleTranslator(
@@ -288,7 +414,8 @@ def clean_message(text):
                 text = translated
         except Exception as e:
             print(f"Translation error: {e}")
-    # Clean up
+
+    # Step 7: Final cleanup
     text = re.sub(r'\n{3,}', '\n\n', text)
     text = text.strip()
     return text
@@ -313,8 +440,6 @@ async def command_menu(event):
             "➡️ `/status` - Current bot status\n"
             "➡️ `/pause` - Pause copying\n"
             "➡️ `/resume` - Resume copying\n"
-            "➡️ `/ai on` - Enable translation\n"
-            "➡️ `/ai off` - Disable translation\n"
             "➡️ `/ping` - Check bot is alive"
         )
 
@@ -332,8 +457,8 @@ async def command_menu(event):
             "**🌐 Translation:**\n"
             "➡️ `/ai on` - Enable translation\n"
             "➡️ `/ai off` - Disable translation\n"
-            "➡️ `/language en` - English\n"
-            "➡️ `/language es` - Spanish\n\n"
+            "➡️ `/language es` - Spanish\n"
+            "➡️ `/language en` - English\n\n"
             "**✏️ Word Management:**\n"
             "➡️ `/addword old:new` - Replace a word\n"
             "➡️ `/removeword word` - Remove replacement\n"
@@ -363,7 +488,8 @@ async def command_menu(event):
             f"📊 **Current System Status:**\n\n"
             f"• Bot State: `{paused}`\n"
             f"• Translation: `{translate}`\n"
-            f"• Language: `{SETTINGS['target_language'].upper()}`\n"
+            f"• Language: "
+            f"`{SETTINGS['target_language'].upper()}`\n"
             f"• Custom Replacements: "
             f"`{len(SETTINGS['custom_replacements'])}`\n"
             f"• Blocked Words: "
@@ -401,8 +527,8 @@ async def command_menu(event):
     elif command.startswith("/language "):
         lang = command.split("/language ")[1].strip()
         supported = [
-            "en", "es", "fr", "de", "pt",
-            "ar", "zh", "ru", "it"
+            "en", "es", "fr", "de",
+            "pt", "ar", "zh", "ru", "it"
         ]
         if lang in supported:
             SETTINGS["target_language"] = lang
@@ -512,13 +638,11 @@ async def album_handler(event):
     if not destination_id:
         return
 
-    # Skip audio/video
     for msg in event.messages:
         if is_audio_message(msg) or is_video_message(msg):
             print("⏭️ Skipped album: audio/video")
             return
 
-    # Must have valid signal caption
     caption = None
     has_valid_caption = False
     for msg in event.messages:
@@ -590,10 +714,10 @@ async def replication_engine(event):
             print("⏭️ Skipped: photo with no caption")
             return
         if is_blocked_image(raw_text):
-            print("⏭️ Skipped: blocked image phrase")
+            print("⏭️ Skipped: blocked image")
             return
         if not is_allowed_message(raw_text):
-            print("⏭️ Skipped: photo not a valid signal")
+            print("⏭️ Skipped: photo not a signal")
             return
 
     # Text only filtering
@@ -610,7 +734,7 @@ async def replication_engine(event):
             print("⏭️ Skipped: blocked word")
             return
 
-    # Process and send
+    # Process
     final_text = clean_message(raw_text) if raw_text else None
 
     try:
@@ -636,7 +760,6 @@ async def replication_engine(event):
 # RESILIENT CLIENT RUNNER
 # -------------------------------------------------------------------
 async def run_client_forever(client, name, start_kwargs=None):
-    """Keep client connected indefinitely with auto-reconnect."""
     backoff = 5
     while True:
         try:
@@ -664,7 +787,6 @@ async def run_client_forever(client, name, start_kwargs=None):
             AuthKeyUnregisteredError,
         ) as e:
             print(f"❌ Fatal session error on {name}: {e}")
-            print("Please generate a new session string.")
             return
         except Exception as e:
             print(f"⚠️ {name} error: {e}")
@@ -683,7 +805,6 @@ async def main():
     try:
         if not await user_client.is_user_authorized():
             print("❌ Session string invalid or expired!")
-            print("Please generate a new session string.")
             return
     except (
         SessionExpiredError,
@@ -703,7 +824,7 @@ async def main():
     print("\n🚀 Omar Channel Replicator Bot RUNNING!")
     print("📡 HardScalping Room → SCALPING JZ GOLD")
     print("📡 Daytrading Room → DAYTRADING JZ GOLD")
-    print("🚫 Visionarios images: BLOCKED\n")
+    print("✏️ Signal format: Omar's custom format\n")
 
     await asyncio.gather(
         run_client_forever(user_client, "Userbot"),
